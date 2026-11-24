@@ -39,7 +39,7 @@ from app.infrastructure.beta_connector_binding import (
     reconcile_beta_connector_binding,
 )
 from app.infrastructure.beta_space import reconcile_beta_katya_space_binding
-from app.infrastructure.database import database_runtime_lifespan
+from app.infrastructure.database import DatabaseRuntime, database_runtime_lifespan
 from app.infrastructure.readiness import build_readiness_service
 from app.services.telegram import TelegramClient, build_telegram_http_client
 from app.services.telegram_alpha_webhook import (
@@ -101,6 +101,121 @@ def _alpha_transcription_configured(settings: object) -> bool:
             "dropbox_call_account_id",
         )
     )
+
+
+def _start_message_workers(
+    tasks: dict[str, asyncio.Task[None]],
+    *,
+    settings: Settings,
+    database_runtime: DatabaseRuntime,
+    telegram: TelegramClient,
+    worker_health: WorkerHealthRegistry,
+    telegram_worker_enabled: bool,
+    reply_sequence_worker_enabled: bool,
+) -> None:
+    if telegram_worker_enabled:
+        tasks["worker"] = asyncio.create_task(
+            run_telegram_worker_managed_loop(
+                settings,
+                health_reporter=worker_health,
+            )
+        )
+    if reply_sequence_worker_enabled:
+        tasks["reply_sequence"] = asyncio.create_task(
+            run_reply_sequence_worker_loop(
+                settings=settings,
+                session_factory=database_runtime.session_factory,
+                telegram=telegram,
+                health_reporter=worker_health,
+            )
+        )
+    if getattr(settings, "gate_document_cleanup_enabled", False):
+        tasks["reply_document_cleanup"] = asyncio.create_task(
+            run_reply_document_cleanup_loop(database_runtime.session_factory)
+        )
+
+
+def _start_audio_workers(
+    tasks: dict[str, asyncio.Task[None]],
+    *,
+    settings: Settings,
+    database_runtime: DatabaseRuntime,
+    watch_wake_event: asyncio.Event,
+    watch_wake_enabled: bool,
+    watch_mark_wake: asyncio.Event,
+    watch_archive_wake: asyncio.Event | None,
+    watch_transcription_wake: asyncio.Event | None,
+    watch_update_wake: asyncio.Event | None,
+    dropbox_call_worker_enabled: bool,
+    dropbox_call_wake_event: asyncio.Event,
+) -> None:
+    if getattr(settings, "gate_watch_voice_enabled", False):
+        tasks["watch_voice"] = asyncio.create_task(
+            run_watch_voice_worker_loop(
+                settings=settings,
+                session_factory=database_runtime.session_factory,
+            )
+        )
+    if watch_wake_enabled:
+        tasks["watch_wake"] = asyncio.create_task(
+            run_watch_webhook_loop(
+                settings, database_runtime.session_factory,
+                watch_wake_event,
+                watch_archive_wake, watch_mark_wake,
+            )
+        )
+        tasks["watch_mark"] = asyncio.create_task(
+            run_watch_mark_loop(
+                settings, database_runtime.session_factory, watch_mark_wake
+            )
+        )
+    if watch_archive_wake is not None:
+        tasks["watch_archive"] = asyncio.create_task(
+            run_watch_archive_loop(
+                settings, database_runtime.session_factory, watch_archive_wake,
+                watch_transcription_wake, watch_update_wake,
+            )
+        )
+    if watch_transcription_wake is not None:
+        tasks["watch_transcription"] = asyncio.create_task(
+            run_watch_transcription_loop(
+                settings, database_runtime.session_factory, watch_transcription_wake,
+                mark_wake=watch_update_wake,
+            )
+        )
+    if dropbox_call_worker_enabled:
+        tasks["dropbox_call"] = asyncio.create_task(
+            run_dropbox_call_worker_loop(
+                settings=settings,
+                session_factory=database_runtime.session_factory,
+                intake_wake=dropbox_call_wake_event,
+            )
+        )
+
+
+async def _stop_workers(tasks: dict[str, asyncio.Task[None]]) -> None:
+    # Stop consumers before releasing the shared HTTP client and database.
+    for name in (
+        "beta_space",
+        "alpha_transcription",
+        "watch_wake",
+        "watch_mark",
+        "watch_archive",
+        "watch_transcription",
+        "watch_voice",
+        "dropbox_call",
+        "reply_sequence",
+        "reply_document_cleanup",
+        "worker",
+        "reconciliation",
+    ):
+        task = tasks.get(name)
+        if task is None:
+            continue
+        if not task.done():
+            task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
 
 @asynccontextmanager
@@ -166,18 +281,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                     database_runtime.session_factory,
                 )
             async with build_telegram_http_client() as http_client:
-                reconciliation_task: asyncio.Task[None] | None = None
-                worker_task: asyncio.Task[None] | None = None
-                reply_sequence_task: asyncio.Task[None] | None = None
-                reply_document_cleanup_task: asyncio.Task[None] | None = None
-                dropbox_call_task: asyncio.Task[None] | None = None
-                watch_voice_task: asyncio.Task[None] | None = None
-                watch_wake_task: asyncio.Task[None] | None = None
-                watch_mark_task: asyncio.Task[None] | None = None
-                watch_archive_task: asyncio.Task[None] | None = None
-                watch_transcription_task: asyncio.Task[None] | None = None
-                alpha_transcription_task: asyncio.Task[None] | None = None
-                beta_space_task: asyncio.Task[None] | None = None
+                tasks: dict[str, asyncio.Task[None]] = {}
                 try:
                     # Neutral process-wide name for shared outbound HTTP. Keep the
                     # Beta alias until its ingress is migrated independently.
@@ -201,21 +305,21 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                     _app.state.readiness_service = build_readiness_service(
                         database_runtime.engine
                     )
-                    reconciliation_task = asyncio.create_task(
+                    tasks["reconciliation"] = asyncio.create_task(
                         _reconcile_all_telegram_webhooks(
                             settings,
                             http_client,
                         )
                     )
                     if alpha_transcription_enabled:
-                        alpha_transcription_task = asyncio.create_task(
+                        tasks["alpha_transcription"] = asyncio.create_task(
                             run_alpha_transcription_worker_loop(
                                 settings=settings,
                                 session_factory=database_runtime.session_factory,
                             )
                         )
                     if getattr(settings, "gate_beta_connector_enabled", False):
-                        beta_space_task = asyncio.create_task(
+                        tasks["beta_space"] = asyncio.create_task(
                             run_beta_space_worker_loop(
                                 settings=settings,
                                 sessions=database_runtime.session_factory,
@@ -223,126 +327,32 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                                 http_client=http_client,
                             )
                         )
-                    if telegram_worker_enabled:
-                        worker_task = asyncio.create_task(
-                            run_telegram_worker_managed_loop(
-                                settings,
-                                health_reporter=worker_health,
-                            )
-                        )
-                    if reply_sequence_worker_enabled:
-                        reply_sequence_task = asyncio.create_task(
-                            run_reply_sequence_worker_loop(
-                                settings=settings,
-                                session_factory=database_runtime.session_factory,
-                                telegram=_app.state.telegram_client,
-                                health_reporter=worker_health,
-                            )
-                        )
-                    if getattr(settings, "gate_document_cleanup_enabled", False):
-                        reply_document_cleanup_task = asyncio.create_task(
-                            run_reply_document_cleanup_loop(database_runtime.session_factory)
-                        )
-                    if getattr(settings, "gate_watch_voice_enabled", False):
-                        watch_voice_task = asyncio.create_task(
-                            run_watch_voice_worker_loop(
-                                settings=settings,
-                                session_factory=database_runtime.session_factory,
-                            )
-                        )
-                    if watch_wake_enabled:
-                        watch_wake_task = asyncio.create_task(
-                            run_watch_webhook_loop(
-                                settings, database_runtime.session_factory,
-                                _app.state.watch_wake_event,
-                                watch_archive_wake, watch_mark_wake,
-                            )
-                        )
-                        watch_mark_task = asyncio.create_task(
-                            run_watch_mark_loop(
-                                settings, database_runtime.session_factory, watch_mark_wake
-                            )
-                        )
-                    if watch_archive_wake is not None:
-                        watch_archive_task = asyncio.create_task(
-                            run_watch_archive_loop(
-                                settings, database_runtime.session_factory, watch_archive_wake,
-                                watch_transcription_wake, watch_update_wake,
-                            )
-                        )
-                    if watch_transcription_wake is not None:
-                        watch_transcription_task = asyncio.create_task(
-                            run_watch_transcription_loop(
-                                settings, database_runtime.session_factory, watch_transcription_wake,
-                                mark_wake=watch_update_wake,
-                            )
-                        )
-                    if dropbox_call_worker_enabled:
-                        dropbox_call_task = asyncio.create_task(
-                            run_dropbox_call_worker_loop(
-                                settings=settings,
-                                session_factory=database_runtime.session_factory,
-                                intake_wake=_app.state.dropbox_call_wake_event,
-                            )
-                        )
+                    _start_message_workers(
+                        tasks,
+                        settings=settings,
+                        database_runtime=database_runtime,
+                        telegram=_app.state.telegram_client,
+                        worker_health=worker_health,
+                        telegram_worker_enabled=telegram_worker_enabled,
+                        reply_sequence_worker_enabled=reply_sequence_worker_enabled,
+                    )
+                    _start_audio_workers(
+                        tasks,
+                        settings=settings,
+                        database_runtime=database_runtime,
+                        watch_wake_event=_app.state.watch_wake_event,
+                        watch_wake_enabled=watch_wake_enabled,
+                        watch_mark_wake=watch_mark_wake,
+                        watch_archive_wake=watch_archive_wake,
+                        watch_transcription_wake=watch_transcription_wake,
+                        watch_update_wake=watch_update_wake,
+                        dropbox_call_worker_enabled=dropbox_call_worker_enabled,
+                        dropbox_call_wake_event=_app.state.dropbox_call_wake_event,
+                    )
                     yield
                 finally:
                     try:
-                        if beta_space_task is not None:
-                            if not beta_space_task.done():
-                                beta_space_task.cancel()
-                            with suppress(asyncio.CancelledError):
-                                await beta_space_task
-                        if alpha_transcription_task is not None:
-                            if not alpha_transcription_task.done():
-                                alpha_transcription_task.cancel()
-                            with suppress(asyncio.CancelledError):
-                                await alpha_transcription_task
-                        if watch_wake_task is not None:
-                            watch_wake_task.cancel()
-                            with suppress(asyncio.CancelledError):
-                                await watch_wake_task
-                        if watch_mark_task is not None:
-                            watch_mark_task.cancel()
-                            with suppress(asyncio.CancelledError):
-                                await watch_mark_task
-                        if watch_archive_task is not None:
-                            watch_archive_task.cancel()
-                            with suppress(asyncio.CancelledError):
-                                await watch_archive_task
-                        if watch_transcription_task is not None:
-                            watch_transcription_task.cancel()
-                            with suppress(asyncio.CancelledError):
-                                await watch_transcription_task
-                        if watch_voice_task is not None:
-                            watch_voice_task.cancel()
-                            with suppress(asyncio.CancelledError):
-                                await watch_voice_task
-                        if dropbox_call_task is not None:
-                            if not dropbox_call_task.done():
-                                dropbox_call_task.cancel()
-                            with suppress(asyncio.CancelledError):
-                                await dropbox_call_task
-                        if reply_sequence_task is not None:
-                            if not reply_sequence_task.done():
-                                reply_sequence_task.cancel()
-                            with suppress(asyncio.CancelledError):
-                                await reply_sequence_task
-                        if reply_document_cleanup_task is not None:
-                            if not reply_document_cleanup_task.done():
-                                reply_document_cleanup_task.cancel()
-                            with suppress(asyncio.CancelledError):
-                                await reply_document_cleanup_task
-                        if worker_task is not None:
-                            if not worker_task.done():
-                                worker_task.cancel()
-                            with suppress(asyncio.CancelledError):
-                                await worker_task
-                        if reconciliation_task is not None:
-                            if not reconciliation_task.done():
-                                reconciliation_task.cancel()
-                            with suppress(asyncio.CancelledError):
-                                await reconciliation_task
+                        await _stop_workers(tasks)
                     finally:
                         if hasattr(_app.state, "readiness_service"):
                             delattr(_app.state, "readiness_service")
