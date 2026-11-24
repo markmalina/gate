@@ -1091,43 +1091,43 @@ async def test_mcp_status_is_scoped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "app.api.mcp_routes.beta_katya_space_operational_status",
+        "app.api.mcp_status.beta_katya_space_operational_status",
         _beta_katya_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.beta_wedding_space_operational_status",
+        "app.api.mcp_status.beta_wedding_space_operational_status",
         _beta_wedding_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.telegram_voice_operational_status",
+        "app.api.mcp_status.telegram_voice_operational_status",
         _voice_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.telegram_business_text_parity_status",
+        "app.api.mcp_status.telegram_business_text_parity_status",
         _parity_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.historical_debt_diagnostics",
+        "app.api.mcp_status.historical_debt_diagnostics",
         _historical_debt_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.owner_voice_archive_inventory",
+        "app.api.mcp_status.owner_voice_archive_inventory",
         _voice_archive_inventory,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.become_controlled_intake_status",
+        "app.api.mcp_status.become_controlled_intake_status",
         _become_intake_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.become_i4_recovery_status",
+        "app.api.mcp_status.become_i4_recovery_status",
         _become_recovery_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.become_quest_status",
+        "app.api.mcp_status.become_quest_status",
         _become_quest_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.probe_all_i4_connectivity",
+        "app.api.mcp_status.probe_all_i4_connectivity",
         _become_connectivity,
     )
     response = await _post(
