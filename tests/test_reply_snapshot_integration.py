@@ -188,6 +188,40 @@ async def test_actual_media_read_prepare_preview_stale_and_new_cycle(monkeypatch
 
 
 @pytest.mark.anyio
+async def test_old_unprojected_receipt_does_not_hide_a_processed_latest_id(monkeypatch):
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions)
+        await receive(sessions, seed, update_id=1)
+        for update_id in range(2, 22):
+            await receive(sessions, seed, update_id=update_id)
+        async with sessions() as session:
+            await session.execute(
+                update(TelegramReceipt).where(TelegramReceipt.update_id > 1)
+                .values(status="processed")
+            )
+            await session.commit()
+
+        async with connected(monkeypatch, sessions, seed) as (call, telegram, _):
+            task = {"task_id": str(seed.task_id)}
+            current = await call("gate_get_reply_context", task)
+            assert current["context_snapshot"] == "21"
+            assert current["context_ready"] is True
+            assert current["dialog_events_has_more"] is True
+            draft = await call(
+                "gate_save_reply_draft",
+                {**task, "text": "Synthetic reply", "expected_context_snapshot": "21"},
+            )
+
+            await receive(sessions, seed, update_id=22)
+            result = await call(
+                "gate_send_approved_reply",
+                {"draft_id": draft["draft_id"], "confirmed": True, **draft["confirmation"]},
+            )
+            assert result["error"] == "context_changed" and result["sent"] is False
+            assert telegram.plain_calls == []
+
+
+@pytest.mark.anyio
 async def test_raw_pages_truncation_history_and_explicit_gap_never_mint_false_ready(monkeypatch):
     async with _postgres_sessions() as sessions:
         seed = await _seed_reply(sessions)
