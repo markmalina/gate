@@ -99,7 +99,7 @@ async def dropbox_call_operational_status(
     intake_project_allowed: bool,
     enabled: bool,
     configuration: dict[str, bool],
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, int]]:
     """Inspect persisted state only; never poll Dropbox or call a provider.
 
     The account-global inbox is visible only to the configured owner workspace
@@ -126,10 +126,10 @@ async def dropbox_call_operational_status(
         "mutation_allowed": False,
     }
     if workspace_key != configured_workspace or not project_ids or not intake_project_allowed:
-        return result
+        return result, {}
     result.update(scope_allowed=True, enabled=enabled, configuration=configuration)
     if not account_id:
-        return result
+        return result, {}
 
     state_result = await session.execute(
         text(
@@ -167,25 +167,46 @@ async def dropbox_call_operational_status(
                  "AND transcription_reason_code = 'telegram_voice_no_speech'")
     superseded = ("transcription_status = 'rejected' "
                   "AND transcription_reason_code = 'dropbox_call_revision_superseded'")
+    # Keep empty reasons and out-of-allowlist strings in fixed public buckets.
+    # One grouped read covers the archive, independent of the per-record limit.
+    incomplete = f"(CASE WHEN ({complete}) OR ({superseded}) THEN 0 ELSE 1 END) = 1"
+    safe_reason = (
+        f"CASE WHEN {incomplete} THEN CASE "
+        "WHEN COALESCE(transcription_reason_code, '') = '' THEN 'unspecified' "
+        "WHEN transcription_reason_code IN :safe_errors THEN transcription_reason_code "
+        "ELSE 'unclassified_error' END END"
+    )
     counts = (await session.execute(
-        text("SELECT count(*) AS total, "
-             f"COALESCE(SUM(CASE WHEN {complete} THEN 1 ELSE 0 END), 0) AS completed, "
-             f"COALESCE(SUM(CASE WHEN {no_speech} THEN 1 ELSE 0 END), 0) AS no_speech, "
-             f"COALESCE(SUM(CASE WHEN {superseded} THEN 1 ELSE 0 END), 0) AS superseded "
-             + scope).bindparams(bindparam("project_ids", expanding=True)), parameters,
-    )).mappings().one()
-    missing = (int(counts["total"]) - int(counts["completed"])
-               - int(counts["superseded"]))
+        text(
+            f"SELECT {safe_reason} AS reason, count(*) AS total, "
+            f"SUM(CASE WHEN {complete} THEN 1 ELSE 0 END) AS completed, "
+            f"SUM(CASE WHEN {no_speech} THEN 1 ELSE 0 END) AS no_speech, "
+            f"SUM(CASE WHEN {superseded} THEN 1 ELSE 0 END) AS superseded "
+            + scope + "GROUP BY 1"
+        ).bindparams(
+            bindparam("project_ids", expanding=True),
+            bindparam("safe_errors", expanding=True),
+        ),
+        {**parameters, "safe_errors": sorted(_SAFE_ERRORS)},
+    )).mappings().all()
+    total = sum(int(row["total"]) for row in counts)
+    completed = sum(int(row["completed"]) for row in counts)
+    superseded_count = sum(int(row["superseded"]) for row in counts)
+    no_speech_count = sum(int(row["no_speech"]) for row in counts)
+    missing = total - completed - superseded_count
     result["archive_counts"] = {
-        "total": int(counts["total"]), "completed": int(counts["completed"]),
-        "superseded": int(counts["superseded"]), "incomplete": missing,
+        "total": total, "completed": completed,
+        "superseded": superseded_count, "incomplete": missing,
+    }
+    incomplete_reason_counts = {
+        row["reason"]: int(row["total"]) for row in counts if row["reason"] is not None
     }
     result["incomplete_truncated"] = missing > 100
-    result["no_speech_count"] = int(counts["no_speech"])
-    result["requires_attention_count"] = missing - int(counts["no_speech"])
+    result["no_speech_count"] = no_speech_count
+    result["requires_attention_count"] = missing - no_speech_count
     for key, tail in (
         ("recent_recordings", "ORDER BY received_at DESC, id DESC LIMIT 20"),
-        ("incomplete_recordings", f"AND NOT ({complete}) AND NOT ({superseded}) "
+        ("incomplete_recordings", f"AND {incomplete} "
          "ORDER BY received_at ASC, id ASC LIMIT 100"),
     ):
         recordings_result = await session.execute(
@@ -220,4 +241,4 @@ async def dropbox_call_operational_status(
                     ),
                 }
             )
-    return result
+    return result, incomplete_reason_counts
