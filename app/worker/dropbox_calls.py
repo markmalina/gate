@@ -22,7 +22,6 @@ from sqlalchemy.orm import aliased
 from app.application.audio_summary import AUDIO_SUMMARY_MODEL, build_audio_summary
 from app.application.telegram_voice_transcription import (
     MAX_SOURCE_AUDIO_BYTES,
-    DownloadedVoice,
     TelegramVoiceOutcome,
     TelegramVoiceReference,
     TelegramVoiceTranscriptionService,
@@ -41,11 +40,7 @@ from app.infrastructure.openai_transcription import (
     OpenAITranscriptionClient,
     OpenAITranscriptionConfig,
 )
-from app.infrastructure.owner_voice_recovery import (
-    claim_owner_voice_recovery,
-    owner_voice_reservation_key,
-    reconcile_exact_call_copies,
-)
+from app.infrastructure.owner_voice_recovery import reconcile_exact_call_copies
 from app.infrastructure.telegram_voice import TelegramVoiceNormalizer
 from app.models.billing import BillingBudgetReservationModel
 from app.models.domain import (
@@ -53,21 +48,21 @@ from app.models.domain import (
     DropboxCallInboxState,
     DropboxCallIntakeRejection,
     PhoneCallRecording,
-    TelegramOutboxEvent,
-    TelegramOutboxStatus,
-    TelegramReceipt,
-    TelegramReceiptStatus,
     TelegramVoiceArchive,
 )
+from app.worker.stored_audio import (
+    STORED_VOICE_BUDGET_CONNECTOR_REF,
+    STORED_VOICE_BUDGET_SCOPE_KIND,
+    StoredVoiceDownloader,
+    store_no_speech_summary,
+)
+from app.worker.telegram_voice_recovery import recover_authorized_telegram_voice
 
 logger = logging.getLogger(__name__)
 
 _DROPBOX_API = "https://api.dropboxapi.com/2"
 _DROPBOX_CONTENT_API = "https://content.dropboxapi.com/2"
 DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES = MAX_SOURCE_AUDIO_BYTES
-# Reuse the existing hard-limited Gate voice budget until billing scopes are generalized.
-_CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND = "telegram_connector"
-_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF = "telegram_business"
 _LONG_CALL_RECOVERY_STATUS = "recovery_v13"
 _LONG_CALL_RECOVERY_MODEL = "gpt-4o-transcribe"
 _CHUNK_REPAIR_RECOVERY_STATUS = "recovery_v14"
@@ -114,21 +109,6 @@ class DropboxCallWorkerError(RuntimeError):
     def __init__(self, code: str) -> None:
         self.code = code
         super().__init__(code)
-
-
-class _StoredCallDownloader:
-    def __init__(
-        self,
-        recording: PhoneCallRecording | TelegramVoiceArchive,
-    ) -> None:
-        self._recording = recording
-
-    async def download(self, _reference: TelegramVoiceReference) -> DownloadedVoice:
-        return DownloadedVoice(
-            data=self._recording.data,
-            filename=self._recording.filename,
-            media_type=self._recording.media_type,
-        )
 
 
 async def run_dropbox_call_worker_loop(
@@ -207,7 +187,7 @@ async def _run_transcription_loop(
         wake.clear()
         if settings.openai_api_key.get_secret_value():
             try:
-                await _recover_authorized_telegram_voices(
+                await recover_authorized_telegram_voice(
                     settings=settings, session_factory=session_factory, http=http,
                 )
                 await _recover_duration_unknown_recordings(
@@ -850,7 +830,7 @@ async def _transcribe_recording(
                 raise DropboxCallWorkerError("dropbox_call_recognition_claim_lost")
 
     service = TelegramVoiceTranscriptionService(
-        downloader=_StoredCallDownloader(recording),
+        downloader=StoredVoiceDownloader(recording),
         normalizer=TelegramVoiceNormalizer(),
         budget=SqlBillingBudgetService(session_factory),
         speech_to_text=OpenAITranscriptionClient(
@@ -872,7 +852,7 @@ async def _transcribe_recording(
             duration_seconds=duration_seconds,
         ),
         workspace_key=settings.gate_workspace_id,
-        connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
+        connector_ref=STORED_VOICE_BUDGET_CONNECTOR_REF,
         reservation_key=(
             f"dropbox-call-v15:{recording.id}" if empty_result_recovery else (
                 f"dropbox-call-v14:{recording.id}"
@@ -888,7 +868,7 @@ async def _transcribe_recording(
         occurred_at=occurred_at,
         language="ru",
         enabled=True,
-        budget_scope_kind=_CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND,
+        budget_scope_kind=STORED_VOICE_BUDGET_SCOPE_KIND,
         on_recognition_start=mark_recognition_started,
     )
     try:
@@ -930,273 +910,8 @@ async def _transcribe_recording(
             stored.summary_reason_code = "audio_summary_generated"
             stored.summarized_at = datetime.now(UTC)
         elif result.reason_code == "telegram_voice_no_speech":
-            _store_no_speech_summary(stored)
+            store_no_speech_summary(stored)
         await session.commit()
-
-
-_TELEGRAM_VOICE_RECOVERY_GENERATION = 2
-
-
-def _store_no_speech_summary(archive: PhoneCallRecording | TelegramVoiceArchive) -> None:
-    archive.summary_status = "summarized"
-    archive.summary_text = "Распознавание завершено: речь не распознана."
-    archive.summary_model = AUDIO_SUMMARY_MODEL
-    archive.summary_reason_code = "audio_no_speech"
-    archive.summarized_at = datetime.now(UTC)
-
-
-async def _claim_authorized_telegram_voice(
-    *,
-    session_factory: async_sessionmaker[AsyncSession],
-) -> tuple[TelegramVoiceArchive, int] | None:
-    """Atomically consume one exact dead-letter recovery grant before provider I/O."""
-
-    expected_error = "openai_transcription_transport_unknown"
-    async with session_factory() as session:
-        archives = list(
-            (
-                await session.scalars(
-                    select(TelegramVoiceArchive)
-                    .join(
-                        TelegramReceipt,
-                        TelegramReceipt.id == TelegramVoiceArchive.receipt_id,
-                    )
-                    .join(
-                        TelegramOutboxEvent,
-                        TelegramOutboxEvent.receipt_id == TelegramReceipt.id,
-                    )
-                    .where(
-                        TelegramVoiceArchive.transcription_recovery_generation
-                        == _TELEGRAM_VOICE_RECOVERY_GENERATION,
-                        TelegramVoiceArchive.transcription_recovery_authorized_at
-                        .is_(None),
-                        TelegramVoiceArchive.transcription_status
-                        == TelegramVoiceOutcome.UNKNOWN.value,
-                        TelegramVoiceArchive.transcript_text.is_(None),
-                        TelegramVoiceArchive.summary_text.is_(None),
-                        TelegramReceipt.bot_key == "telegram_business",
-                        TelegramReceipt.status
-                        == TelegramReceiptStatus.DEAD_LETTER.value,
-                        TelegramReceipt.last_error_code == expected_error,
-                        TelegramOutboxEvent.status
-                        == TelegramOutboxStatus.DEAD_LETTER.value,
-                        TelegramOutboxEvent.last_error_code == expected_error,
-                    )
-                    .order_by(TelegramVoiceArchive.received_at.asc())
-                    .limit(2)
-                    .with_for_update(
-                        of=(TelegramVoiceArchive,),
-                        skip_locked=True,
-                    )
-                )
-            ).all()
-        )
-        if len(archives) > 1:
-            raise DropboxCallWorkerError(
-                "telegram_voice_recovery_scope_ambiguous"
-            )
-        if not archives:
-            return None
-        archive = archives[0]
-        generation = archive.transcription_recovery_generation
-        if generation != _TELEGRAM_VOICE_RECOVERY_GENERATION:
-            return None
-        if (
-            not archive.data
-            or archive.size_bytes <= 0
-            or archive.duration_seconds <= 0
-            or len(archive.sha256) != 64
-        ):
-            raise DropboxCallWorkerError(
-                "telegram_voice_recovery_archive_invalid"
-            )
-
-        # Commit the generation consumption before provider I/O. A crash now
-        # fails closed: a new owner authorization is required for another try.
-        archive.transcription_recovery_generation = None
-        archive.reset_processing_attempt(queued_at=None)
-        await session.commit()
-        await session.refresh(archive)
-        return archive, generation
-
-
-def _telegram_voice_recovery_reservation_key(
-    archive_id: object,
-    generation: int,
-) -> str:
-    """Bind one recovery reservation to one isolated authorization generation."""
-
-    if generation != _TELEGRAM_VOICE_RECOVERY_GENERATION:
-        raise DropboxCallWorkerError(
-            "telegram_voice_recovery_generation_invalid"
-        )
-    return f"telegram-voice-recovery-v{generation}:{archive_id}"
-
-
-async def _recover_authorized_telegram_voices(
-    *,
-    settings: Settings,
-    session_factory: async_sessionmaker[AsyncSession],
-    http: httpx.AsyncClient,
-) -> None:
-    """Consume and run at most one exact transport-unknown recovery grant."""
-
-    claimed = await _claim_authorized_telegram_voice(
-        session_factory=session_factory,
-    )
-    archive_only = claimed is None
-    if archive_only:
-        owner_archive = await claim_owner_voice_recovery(
-            session_factory, workspace_key=settings.gate_workspace_id,
-        )
-        if owner_archive is None:
-            return
-        archive, generation = owner_archive, 5
-    else:
-        assert claimed is not None
-        archive, generation = claimed
-    now = datetime.now(UTC)
-
-    async def mark_recovery_started(at: datetime) -> None:
-        async with session_factory.begin() as session:
-            started = await session.scalar(
-                update(TelegramVoiceArchive)
-                .where(
-                    TelegramVoiceArchive.id == archive.id,
-                    TelegramVoiceArchive.recognition_started_at.is_(None),
-                    TelegramVoiceArchive.transcription_status == archive.transcription_status,
-                    TelegramVoiceArchive.transcription_recovery_generation.is_(None),
-                )
-                .values(recognition_started_at=at)
-                .returning(TelegramVoiceArchive.id)
-            )
-            if started is None:
-                raise DropboxCallWorkerError("telegram_voice_recovery_recognition_claim_lost")
-
-    service = TelegramVoiceTranscriptionService(
-        downloader=_StoredCallDownloader(archive),
-        normalizer=TelegramVoiceNormalizer(),
-        budget=SqlBillingBudgetService(session_factory),
-        speech_to_text=OpenAITranscriptionClient(
-            config=OpenAITranscriptionConfig(
-                api_key=settings.openai_api_key.get_secret_value(),
-                enabled=True,
-                model=settings.gate_telegram_voice_transcription_model,
-                base_url=settings.openai_api_base_url,
-            ),
-            http=http,
-        ),
-    )
-    result = await service.transcribe(
-        TranscribeTelegramVoiceCommand(
-            voice=TelegramVoiceReference(
-                file_id=str(archive.id),
-                file_unique_id=archive.sha256,
-                declared_size_bytes=archive.size_bytes,
-                duration_seconds=archive.duration_seconds,
-            ),
-            workspace_key=settings.gate_workspace_id,
-            connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
-            reservation_key=(
-                owner_voice_reservation_key(archive.id) if archive_only
-                else _telegram_voice_recovery_reservation_key(archive.id, generation)
-            ),
-            period_key=now.strftime("%Y-%m"),
-            requested_microusd=max(
-                100,
-                archive.duration_seconds
-                * settings.gate_telegram_voice_reserve_microusd_per_second,
-            ),
-            occurred_at=now,
-            language="ru",
-            enabled=True,
-            budget_scope_kind=_CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND,
-            on_recognition_start=mark_recovery_started,
-        )
-    )
-    async with session_factory() as session:
-        stored = await session.get(
-            TelegramVoiceArchive,
-            archive.id,
-            with_for_update=True,
-        )
-        if stored is None:
-            raise DropboxCallWorkerError(
-                "telegram_voice_recovery_archive_missing"
-            )
-        stored.transcription_status = result.outcome.value
-        stored.transcript_text = result.alpha_input_text
-        stored.transcript_language = "ru"
-        stored.transcription_model = settings.gate_telegram_voice_transcription_model
-        stored.transcription_reason_code = result.reason_code
-        stored.transcribed_at = datetime.now(UTC)
-        stored.record_processing_result(
-            stored.transcribed_at,
-            reason=None if result.alpha_input_text is not None else result.reason_code,
-        )
-        if result.alpha_input_text:
-            stored.summary_status = "summarized"
-            stored.summary_text = build_audio_summary(result.alpha_input_text)
-            stored.summary_model = AUDIO_SUMMARY_MODEL
-            stored.summary_reason_code = "audio_summary_generated"
-            stored.summarized_at = now
-        elif result.reason_code == "telegram_voice_no_speech":
-            _store_no_speech_summary(stored)
-        if result.outcome is TelegramVoiceOutcome.TRANSCRIBED and not archive_only:
-            await _requeue_recovered_telegram_voice(
-                session=session,
-                archive=stored,
-                now=now,
-            )
-        await session.commit()
-
-
-async def _requeue_recovered_telegram_voice(
-    *,
-    session: AsyncSession,
-    archive: TelegramVoiceArchive,
-    now: datetime,
-) -> None:
-    """Requeue only the exact dead letter whose archived transcript recovered."""
-
-    row = (
-        await session.execute(
-            select(TelegramReceipt, TelegramOutboxEvent)
-            .join(
-                TelegramOutboxEvent,
-                TelegramOutboxEvent.receipt_id == TelegramReceipt.id,
-            )
-            .where(TelegramReceipt.id == archive.receipt_id)
-            .with_for_update()
-        )
-    ).one_or_none()
-    if row is None:
-        return
-    receipt, event = row
-    expected_error = "openai_transcription_transport_unknown"
-    if (
-        receipt.status != TelegramReceiptStatus.DEAD_LETTER.value
-        or event.status != TelegramOutboxStatus.DEAD_LETTER.value
-        or receipt.last_error_code != expected_error
-        or event.last_error_code != expected_error
-    ):
-        return
-
-    event.status = TelegramOutboxStatus.PENDING.value
-    event.attempt_count = 0
-    event.available_at = now
-    event.locked_at = None
-    event.delivered_at = None
-    event.last_error_code = None
-    event.last_error_at = None
-
-    receipt.status = TelegramReceiptStatus.RECEIVED.value
-    receipt.attempt_count = 0
-    receipt.processing_started_at = None
-    receipt.processed_at = None
-    receipt.next_attempt_at = None
-    receipt.last_error_code = None
-    receipt.last_error_at = None
 
 
 async def _summarize_ready_audio(

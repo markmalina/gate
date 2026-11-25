@@ -139,7 +139,7 @@ async def test_call_webhook_advances_past_large_file_while_transcription_is_busy
     monkeypatch.setattr(dropbox_calls, "_download_revision", download)
     monkeypatch.setattr(dropbox_calls, "_probe_duration_seconds", duration)
     monkeypatch.setattr(dropbox_calls.TelegramVoiceTranscriptionService, "transcribe", transcribe)
-    monkeypatch.setattr(dropbox_calls, "_recover_authorized_telegram_voices", no_maintenance)
+    monkeypatch.setattr(dropbox_calls, "recover_authorized_telegram_voice", no_maintenance)
     monkeypatch.setattr(dropbox_calls, "_recover_duration_unknown_recordings", no_maintenance)
     monkeypatch.setattr(dropbox_calls, "_summarize_ready_audio", after_transcription)
     monkeypatch.setattr(dropbox_calls, "_mark_superseded_revisions", no_maintenance)
