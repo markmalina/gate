@@ -15,7 +15,7 @@ from app.application.telegram_voice_transcription import TelegramVoiceOutcome
 from app.core.config import Settings
 from app.infrastructure.owner_voice_recovery import EXACT_ARCHIVES, reconcile_exact_call_copies
 from app.models.domain import TelegramVoiceArchive
-from app.worker import dropbox_calls
+from app.worker import telegram_voice_recovery
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -75,14 +75,16 @@ def test_recovery_commits_grant_before_provider_and_never_requeues(monkeypatch):
     async def forbidden_requeue(**_kwargs):
         raise AssertionError("archive recovery must not dispatch messages")
 
-    monkeypatch.setattr(dropbox_calls, "_claim_authorized_telegram_voice", legacy_claim)
-    monkeypatch.setattr(dropbox_calls, "_requeue_recovered_telegram_voice", forbidden_requeue)
-    monkeypatch.setattr(dropbox_calls, "TelegramVoiceTranscriptionService", Service)
+    monkeypatch.setattr(telegram_voice_recovery, "_claim_authorized_telegram_voice", legacy_claim)
+    monkeypatch.setattr(
+        telegram_voice_recovery, "_requeue_recovered_telegram_voice", forbidden_requeue,
+    )
+    monkeypatch.setattr(telegram_voice_recovery, "TelegramVoiceTranscriptionService", Service)
     kwargs = dict(settings=Settings(OPENAI_API_KEY="synthetic-key",
                                    GATE_WORKSPACE_ID="mark-personal"),
                   session_factory=Session, http=object())
-    asyncio.run(dropbox_calls._recover_authorized_telegram_voices(**kwargs))
-    asyncio.run(dropbox_calls._recover_authorized_telegram_voices(**kwargs))
+    asyncio.run(telegram_voice_recovery.recover_authorized_telegram_voice(**kwargs))
+    asyncio.run(telegram_voice_recovery.recover_authorized_telegram_voice(**kwargs))
     assert len(commands) == 1
     assert commands[0].reservation_key == f"telegram-voice-recovery-v5-20260921:{archive.id}"
     assert commands[0].period_key == datetime.now(UTC).strftime("%Y-%m")

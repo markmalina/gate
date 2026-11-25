@@ -23,8 +23,6 @@ from app.core.config import Settings
 from app.infrastructure.telegram_voice import TelegramVoiceNormalizer
 from app.models.domain import PhoneCallRecording
 from app.worker.dropbox_calls import (
-    _CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND,
-    _CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
     DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES,
     DropboxCallWorkerError,
     _audio_media_type,
@@ -34,6 +32,10 @@ from app.worker.dropbox_calls import (
     _recover_duration_unknown_recordings,
     _resume_received_recordings,
     _validate_settings,
+)
+from app.worker.stored_audio import (
+    STORED_VOICE_BUDGET_CONNECTOR_REF,
+    STORED_VOICE_BUDGET_SCOPE_KIND,
 )
 
 
@@ -136,13 +138,13 @@ def test_dropbox_call_uses_existing_hard_limited_voice_budget() -> None:
             duration_seconds=3,
         ),
         workspace_key="mark-personal",
-        connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
+        connector_ref=STORED_VOICE_BUDGET_CONNECTOR_REF,
         reservation_key="dropbox-call-v1:test",
         period_key="2026-07",
         requested_microusd=300,
         occurred_at=datetime.now(UTC),
         enabled=True,
-        budget_scope_kind=_CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND,
+        budget_scope_kind=STORED_VOICE_BUDGET_SCOPE_KIND,
     )
 
     assert command.budget_scope_kind == "telegram_connector"
