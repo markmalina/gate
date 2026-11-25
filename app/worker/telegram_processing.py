@@ -109,7 +109,6 @@ from app.application.telegram_queue_maintenance import (
 )
 from app.application.telegram_voice_archive import (
     ArchiveTelegramVoiceCommand,
-    ArchiveTelegramVoiceService,
     PersistTelegramVoiceTranscriptCommand,
     TelegramVoiceArchiveDirection,
     TelegramVoiceArchiver,
@@ -118,11 +117,7 @@ from app.application.telegram_voice_archive import (
 )
 from app.application.telegram_voice_orchestration import (
     ProcessTelegramVoiceUpdateCommand,
-    ProcessTelegramVoiceUpdateService,
     TelegramVoiceUpdateProcessor,
-)
-from app.application.telegram_voice_transcription import (
-    TelegramVoiceTranscriptionService,
 )
 from app.application.telegram_voice_update import (
     extract_telegram_voice,
@@ -220,12 +215,7 @@ from app.infrastructure.telegram_queue_maintenance import (
     SqlTelegramQueueMaintenance,
 )
 from app.infrastructure.telegram_voice import (
-    TelegramVoiceDownloadConfig,
-    TelegramVoiceDownloader,
     TelegramVoiceNormalizer,
-)
-from app.infrastructure.telegram_voice_archive import (
-    SessionFactoryTelegramVoiceArchiveStore,
 )
 from app.infrastructure.universal_mayak_delivery import (
     TelegramBusinessUniversalMayakDelivery,
@@ -240,6 +230,7 @@ from app.infrastructure.universal_mayak_private_runtime import (
     SessionFactoryApprovedPrivateBindingResolver,
 )
 from app.services.telegram import TelegramClient, build_telegram_http_client
+from app.worker.telegram_voice_wiring import build_telegram_voice_services
 
 logger = logging.getLogger(__name__)
 
@@ -1967,52 +1958,11 @@ async def _run_from_settings(
 
                         ),
                     )
-                voice_downloader = None
-                if (
-                    settings.gate_telegram_voice_archive_enabled
-                    or settings.gate_telegram_voice_transcription_enabled
-                ):
-                    voice_downloader = TelegramVoiceDownloader(
-                        config=TelegramVoiceDownloadConfig(
-                            bot_token=settings.telegram_bot_token,
-                            api_base_url=os.getenv(
-                                "TELEGRAM_API_BASE_URL",
-                                "https://api.telegram.org",
-                            ),
-                        ),
-                        http=http_client,
-                    )
-                voice_archive = None
-                if settings.gate_telegram_voice_archive_enabled:
-                    if voice_downloader is None:
-                        raise RuntimeError("Telegram voice downloader is required")
-                    voice_archive = ArchiveTelegramVoiceService(
-                        downloader=voice_downloader,
-                        store=SessionFactoryTelegramVoiceArchiveStore(sessions),
-                    )
-                voice_updates = None
-                if settings.gate_telegram_voice_transcription_enabled:
-                    if voice_downloader is None:
-                        raise RuntimeError("Telegram voice downloader is required")
-                    api_key = settings.openai_api_key.get_secret_value()
-                    voice_updates = ProcessTelegramVoiceUpdateService(
-                        TelegramVoiceTranscriptionService(
-                            downloader=voice_downloader,
-                            normalizer=TelegramVoiceNormalizer(),
-                            budget=SqlBillingBudgetService(sessions),
-                            speech_to_text=OpenAITranscriptionClient(
-                                config=OpenAITranscriptionConfig(
-                                    api_key=api_key,
-                                    enabled=bool(api_key),
-                                    model=(
-                                        settings.gate_telegram_voice_transcription_model
-                                    ),
-                                    base_url=settings.openai_api_base_url,
-                                ),
-                                http=http_client,
-                            ),
-                        )
-                    )
+                voice_archive, voice_updates = build_telegram_voice_services(
+                    settings=settings,
+                    sessions=sessions,
+                    http_client=http_client,
+                )
                 async with sessions() as session:
                     result = await run_telegram_worker_once(
                         settings=settings,

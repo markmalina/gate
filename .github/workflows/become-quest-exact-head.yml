@@ -53,6 +53,7 @@ on:
       - "app/infrastructure/become_voice_transcription.py"
       - "app/worker/become_pilot_maintenance.py"
       - "app/worker/telegram_processing.py"
+      - "app/worker/telegram_voice_wiring.py"
       - "app/application/become_quest.py"
       - "app/infrastructure/become_quest.py"
       - "app/models/become_quest.py"
