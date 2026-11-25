@@ -1,6 +1,15 @@
 # Gate: программа восстановления рабочих маршрутов
 
-Единый управляющий контекст — [#787](https://github.com/markmalina/gate/issues/787), портфельный parent — [#277](https://github.com/markmalina/gate/issues/277). Перед работой читать [текущую спецификацию](GATE-CURRENT.md), [метрики](GATE-METRICS.md), [AI WORK-RULES](https://github.com/markmalina/ai/blob/main/WORK-RULES.md). Этот план от 05.11.2026 заменяет очередь действий из старых аудитов, сохраняя их доказательства.
+Единый управляющий контекст — [#787](https://github.com/markmalina/gate/issues/787), портфельный parent — [#277](https://github.com/markmalina/gate/issues/277). Перед работой читать [текущую спецификацию](GATE-CURRENT.md), [метрики](GATE-METRICS.md), [AI WORK-RULES](https://github.com/markmalina/ai/blob/main/WORK-RULES.md). План от 05.11.2026 сохраняет исходные цели и критерии. Его прежняя последовательность остаётся историей. Текущий статус и порядок работ находятся в [GATE-CURRENT](GATE-CURRENT.md) и [#787](https://github.com/markmalina/gate/issues/787).
+
+> **Сверка на 25.11.2026.** Маршрут Watch → Mark установлен и принят на одной новой записи
+> ([#770](https://github.com/markmalina/gate/issues/770#issuecomment-7096983689)).
+> C2/C3 для короткого Calls приняты ([#788](https://github.com/markmalina/gate/issues/788#issuecomment-7084006245)).
+> Полный текст длинного звонка C1 остаётся открытым. Guard отправки установлен
+> ([#745](https://github.com/markmalina/gate/issues/745#issuecomment-7137546804)).
+> Живой контроль свежего ответа остаётся в #745. Многодневное наблюдение,
+> альтернативная обработка в Work и отдельные старые сценарии оцениваются по их
+> текущим карточкам. Исторические UNKNOWN и допуски сохраняются как история.
 
 ## Правило результата и последовательность
 
