@@ -5,9 +5,11 @@ import os
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from unittest.mock import Mock
 from uuid import uuid4
 
 import app.worker.telegram_processing as worker
+import app.worker.telegram_voice_wiring as voice_wiring
 import pytest
 from app.application.telegram_processing import AcceptTelegramReceiptCommand
 from app.core.config import Settings
@@ -204,26 +206,67 @@ def test_managed_loop_retries_failed_pool_initialization(monkeypatch):
     assert engine.disposed == 1
 
 
-def test_shared_sessions_are_used_when_voice_archive_is_enabled(monkeypatch):
-    seen = configure(monkeypatch)
+@pytest.mark.parametrize(
+    ("archive_enabled", "transcription_enabled"),
+    [(False, False), (True, False), (False, True), (True, True)],
+)
+def test_voice_services_share_worker_resources(
+    monkeypatch, archive_enabled, transcription_enabled
+):
+    configure(monkeypatch)
     sessions = FakeSessions()
     monkeypatch.setattr(worker, "create_async_engine", lambda *a, **k: pytest.fail("new pool"))
+    client = object()
+    lifecycle = []
 
     @asynccontextmanager
     async def http_client():
-        yield object()
+        lifecycle.append("client_open")
+        yield client
+        lifecycle.append("client_close")
+
+    async def run_once(**kwargs):
+        lifecycle.append("run")
+        assert (kwargs.get("voice_archive") is not None) is archive_enabled
+        assert (kwargs.get("voice_updates") is not None) is transcription_enabled
+        assert (kwargs.get("stale_recovery") is not None) is (
+            archive_enabled and transcription_enabled
+        )
+        return SimpleNamespace(disposition="idle")
 
     monkeypatch.setattr(worker, "build_telegram_http_client", http_client)
-    for name in (
-        "TelegramVoiceDownloadConfig",
-        "TelegramVoiceDownloader",
-        "SessionFactoryTelegramVoiceArchiveStore",
-        "ArchiveTelegramVoiceService",
-    ):
-        monkeypatch.setattr(worker, name, lambda *args, **kwargs: object())
-    configured = settings().model_copy(update={"gate_telegram_voice_archive_enabled": True})
+    monkeypatch.setattr(worker, "run_telegram_worker_once", run_once)
+    downloader = Mock(return_value=object())
+    archive = Mock(wraps=voice_wiring.ArchiveTelegramVoiceService)
+    transcription = Mock(wraps=voice_wiring.TelegramVoiceTranscriptionService)
+    provider = Mock(wraps=voice_wiring.OpenAITranscriptionClient)
+    monkeypatch.setattr(voice_wiring, "TelegramVoiceDownloader", downloader)
+    monkeypatch.setattr(voice_wiring, "ArchiveTelegramVoiceService", archive)
+    monkeypatch.setattr(voice_wiring, "TelegramVoiceTranscriptionService", transcription)
+    monkeypatch.setattr(voice_wiring, "OpenAITranscriptionClient", provider)
+
+    configured = settings().model_copy(update={
+        "telegram_bot_token": "synthetic",
+        "gate_telegram_voice_archive_enabled": archive_enabled,
+        "gate_telegram_voice_transcription_enabled": transcription_enabled,
+    })
     asyncio.run(worker.run_telegram_worker_with_sessions(configured, sessions))
-    assert sessions.opened == len(seen) == 1
+
+    assert sessions.opened == 1
+    assert archive.call_count == int(archive_enabled)
+    assert transcription.call_count == provider.call_count == int(transcription_enabled)
+    if archive_enabled or transcription_enabled:
+        assert lifecycle == ["client_open", "run", "client_close"]
+        downloader.assert_called_once()
+        assert downloader.call_args.kwargs["http"] is client
+    else:
+        assert lifecycle == ["run"]
+        downloader.assert_not_called()
+    if archive_enabled:
+        assert archive.call_args.kwargs["downloader"] is downloader.return_value
+    if transcription_enabled:
+        assert transcription.call_args.kwargs["downloader"] is downloader.return_value
+        assert provider.call_args.kwargs["http"] is client
 
 
 def test_shared_pool_reconnects_after_server_ends_idle_connection(monkeypatch):
