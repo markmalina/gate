@@ -9,7 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from jsonschema import Draft202012Validator, FormatChecker
 
-from app.api import mcp_agent_reads, mcp_routes
+from app.api import mcp_agent_reads, mcp_routes, mcp_status
 from app.api.deps import get_db_session
 from app.api.routes import get_telegram_client
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
@@ -1090,6 +1090,15 @@ async def test_mcp_status_is_scoped(
     mcp_context: FakeMcpSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    calls_status = mcp_status.dropbox_call_operational_status
+
+    async def calls_status_with_reasons(*args: Any, **kwargs: Any) -> Any:
+        snapshot, _ = await calls_status(*args, **kwargs)
+        return snapshot, {"telegram_voice_no_speech": 104, "unspecified": 1}
+
+    monkeypatch.setattr(
+        mcp_status, "dropbox_call_operational_status", calls_status_with_reasons,
+    )
     monkeypatch.setattr(
         "app.api.mcp_status.beta_katya_space_operational_status",
         _beta_katya_status,
@@ -1142,6 +1151,10 @@ async def test_mcp_status_is_scoped(
     structured = result["structuredContent"]
     _assert_valid_output("gate_get_status", structured)
     _assert_main_legacy_output("gate_get_status", structured)
+    status_text = result["content"][0]["text"]
+    assert "Dropbox Calls by reason (all incomplete recordings):" in status_text
+    assert "- telegram_voice_no_speech: 104" in status_text
+    assert "- unspecified: 1" in status_text
     assert len(structured["mcp"]["tools"]) == 18
     assert structured["mcp"]["tools"] == mcp_routes.MCP_LEGACY_STATUS_TOOL_NAMES
     assert set(structured["mcp"]["tools"]) < set(mcp_routes.MCP_TOOL_NAMES)

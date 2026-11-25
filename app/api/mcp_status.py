@@ -45,7 +45,7 @@ async def build_status_snapshot(
     principal: Principal,
     protocol_version: str,
     tool_names: list[str],
-) -> JsonObject:
+) -> tuple[JsonObject, dict[str, int]]:
     """Collect the existing operational sections within the caller's MCP scope."""
     snapshot = await build_gate_status(
         session=session,
@@ -54,7 +54,7 @@ async def build_status_snapshot(
         protocol_version=protocol_version,
         tool_names=tool_names,
     )
-    snapshot["dropbox_calls"] = await dropbox_call_operational_status(
+    calls_status, calls_reasons = await dropbox_call_operational_status(
         session,
         workspace_key=principal.access_scope.workspace_id,
         configured_workspace=settings.gate_workspace_id,
@@ -71,6 +71,7 @@ async def build_status_snapshot(
             "inbox_path_valid": settings.dropbox_call_inbox_path == "/Alpha/Calls",
         },
     )
+    snapshot["dropbox_calls"] = calls_status
     if settings.gate_watch_voice_actions_enabled:
         snapshot["watch_voice_actions"] = await watch_voice_actions_status(
             session, settings,
@@ -189,9 +190,9 @@ async def build_status_snapshot(
             http_client=slice3_status_client,
             now=datetime.now(UTC),
         )
-    return snapshot
+    return snapshot, calls_reasons
 
-def format_status_text(snapshot: JsonObject) -> str:
+def format_status_text(snapshot: JsonObject, calls_reasons: dict[str, int]) -> str:
     counts = snapshot["counts"]
     lines = [
         f"Gate status — {snapshot['environment']}",
@@ -218,6 +219,9 @@ def format_status_text(snapshot: JsonObject) -> str:
         )
     lines.extend(["", "Counts:"])
     lines.extend(f"- {name}: {value}" for name, value in counts.items())
+    if calls_reasons:
+        lines.extend(["", "Dropbox Calls by reason (all incomplete recordings):"])
+        lines.extend(f"- {reason}: {count}" for reason, count in sorted(calls_reasons.items()))
     alpha = snapshot["alpha_canary"]
     lines.extend(
         [
