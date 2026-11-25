@@ -60,6 +60,8 @@ on:
       - "app/models/alpha_transcription.py"
       - "app/api/mcp_routes.py"
       - "app/api/mcp_schemas.py"
+      - "app/api/mcp_schema_common.py"
+      - "app/api/mcp_status_schema.py"
       - "tests/test_become_quest.py"
       - "tests/test_become_transcript_review.py"
       - "tests/test_become_program_draft.py"
