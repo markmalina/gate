@@ -6,7 +6,9 @@ import hashlib
 import os
 import subprocess
 import sys
+import tomllib
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 import httpx
@@ -297,3 +299,15 @@ async def test_work_file_contract_and_byte_roundtrip(stage, stage_signing_key, m
                 ),
             )
             assert (await call(client, "file", args, token))["structuredContent"]["error"] == code
+
+
+def test_railway_stage_starts_only_the_synthetic_app_and_migrates_its_own_db():
+    config = tomllib.loads(Path("railway.personal-s1.toml").read_text())["deploy"]
+    assert "uvicorn app.api.personal_stage:create_app --factory" in config["startCommand"]
+    assert "app.main" not in config["startCommand"] and config["healthcheckPath"] == "/health"
+    prepare = config["preDeployCommand"]
+    assert prepare.index("GATE_PERSONAL_STAGE_DATABASE_URL:?") < prepare.index(
+        "alembic upgrade head"
+    )
+    assert prepare.index("alembic upgrade head") < prepare.index("work_stage provision")
+    assert all('test "$GATE_ENV" = staging' in cmd for cmd in (config["startCommand"], prepare))

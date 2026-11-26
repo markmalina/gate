@@ -1,0 +1,11 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+preDeployCommand = """/bin/sh -ec 'test "$GATE_ENV" = staging; export DATABASE_URL="${GATE_PERSONAL_STAGE_DATABASE_URL:?}"; alembic upgrade head; python -m app.personal_telegram.work_stage provision'"""
+startCommand = """/bin/sh -ec 'test "$GATE_ENV" = staging; exec uvicorn app.api.personal_stage:create_app --factory --host 0.0.0.0 --port "${PORT:-8000}" --no-access-log'"""
+healthcheckPath = "/health"
+healthcheckTimeout = 60
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 2
