@@ -19,6 +19,7 @@ from app.models.watch_voice import WatchEarlyCard, WatchVoiceNote
 
 EARLY_STATUS = "Статус: запись обнаружена; расшифровка ожидается."
 UPDATE_RETRY = timedelta(seconds=60)
+MAX_BACKFILL_EVENTS = 12
 _STRICT_ERRORS = {
     "github_watch_issue_mismatch", "watch_mark_block_mismatch", "watch_mark_source_mismatch",
     "watch_mark_version_mismatch", "watch_mark_transcript_conflict",
@@ -156,7 +157,7 @@ def backfill_event_ids(settings: Settings) -> tuple[str, ...]:
         values = tuple(str(UUID(value.strip())) for value in configured.split(","))
     except ValueError:
         return ()
-    if len(values) != 5 or len(set(values)) != 5:
+    if not 1 <= len(values) <= MAX_BACKFILL_EVENTS or len(set(values)) != len(values):
         return ()
     return values
 
@@ -164,7 +165,7 @@ def backfill_event_ids(settings: Settings) -> tuple[str, ...]:
 async def enroll_mark_backfill(
     settings: Settings, factory: async_sessionmaker[AsyncSession], scope: dict[str, str],
 ) -> None:
-    """Enroll only a fixed five-record cohort. Repeating a launch is idempotent."""
+    """Enroll only the exact configured cohort. Repeating a launch is idempotent."""
     if not settings.gate_watch_mark_updates_enabled:
         return
     event_ids = backfill_event_ids(settings)
@@ -194,11 +195,11 @@ async def enroll_mark_backfill(
                 WatchEarlyCard.issue_url.is_not(None),
             )
         )).all()
-        if len(rows) != 5 or any(
+        if len(rows) != len(event_ids) or any(
             card_url != f"https://github.com/{REPOSITORY}/issues/{number}"
             or (note_url is not None and note_url != card_url)
             for _, _, note_url, card_url, number in rows
-        ) or len({row.issue_number for row in rows}) != 5:
+        ) or len({row.issue_number for row in rows}) != len(event_ids):
             raise WatchVoiceError("watch_mark_backfill_scope_mismatch")
         await session.execute(
             update(WatchVoiceNote).where(

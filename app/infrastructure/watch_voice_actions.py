@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -31,6 +31,7 @@ from app.infrastructure.watch_voice_recovery import (
 )
 from app.infrastructure.watch_voice_w1 import W1Admission
 from app.models.watch_voice import (
+    WatchEarlyCard,
     WatchEarlyCursor,
     WatchVoiceCursor,
     WatchVoiceDrainRun,
@@ -602,12 +603,40 @@ async def operational_status(
             WatchVoiceNote.workspace_key == settings.gate_workspace_id,
             WatchVoiceNote.account_id == settings.dropbox_call_account_id,
         )
-        for field, target in (
-            (WatchVoiceNote.delivery_state, delivery_counts),
-            (WatchVoiceNote.transcription_state, transcription_counts),
-        ):
-            rows = await session.execute(select(field, func.count()).where(*scope).group_by(field))
-            target.update({str(state): count for state, count in rows})
+        # The Mark App confirms publication in the card journal, not the legacy
+        # per-note delivery field. Count each note once across both paths.
+        delivered_to_mark = and_(
+            WatchVoiceNote.webhook_archived.is_(True),
+            WatchVoiceNote.transcription_state == "transcribed",
+            WatchVoiceNote.transcript.is_not(None),
+            WatchVoiceNote.transcript != "",
+            WatchVoiceNote.mark_publish_version > 0,
+            WatchEarlyCard.state == "saved",
+            WatchEarlyCard.issue_number > 0,
+            WatchEarlyCard.issue_url.is_not(None),
+            WatchEarlyCard.mark_published_version == WatchVoiceNote.mark_publish_version,
+            WatchEarlyCard.mark_published_at.is_not(None),
+            WatchEarlyCard.mark_update_blocked.is_(False),
+            WatchEarlyCard.mark_update_error.is_(None),
+        )
+        delivery = case((delivered_to_mark, "delivered"), else_=WatchVoiceNote.delivery_state)
+        rows = await session.execute(
+            select(delivery, func.count()).select_from(WatchVoiceNote)
+            .outerjoin(WatchEarlyCard, and_(
+                WatchEarlyCard.id == WatchVoiceNote.id,
+                WatchEarlyCard.workspace_key == WatchVoiceNote.workspace_key,
+                WatchEarlyCard.account_id == WatchVoiceNote.account_id,
+                WatchEarlyCard.file_id == WatchVoiceNote.file_id,
+                WatchEarlyCard.revision == WatchVoiceNote.revision,
+            ))
+            .where(*scope).group_by(delivery)
+        )
+        delivery_counts.update({str(state): count for state, count in rows})
+        transcription = WatchVoiceNote.transcription_state
+        rows = await session.execute(
+            select(transcription, func.count()).where(*scope).group_by(transcription)
+        )
+        transcription_counts.update({str(state): count for state, count in rows})
         runs = int(await session.scalar(select(func.count()).select_from(WatchVoiceDrainRun)) or 0)
         rows = await session.execute(
             select(WatchVoiceRecoveryClaim.outcome, func.count())
