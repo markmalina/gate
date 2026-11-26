@@ -70,7 +70,7 @@ owner action after review. See `docs/operations/GATE-PUBLIC-PREP.md`.
 ### Production deploy route
 
 The registered Gate-only route is operational. See the
-[25 November release receipt](https://github.com/markmalina/gate/actions/runs/45582695660) and
+[latest verified runtime release](https://github.com/markmalina/gate/actions/runs/45686653999) and
 [current state](docs/GATE-CURRENT.md). Each release requires its own valid gate.
 
 Gate owns `.github/workflows/ops-deploy.yml` and control issue #751.

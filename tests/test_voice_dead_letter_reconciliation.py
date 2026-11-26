@@ -67,7 +67,7 @@ def test_reconciliation_uses_one_atomic_queue_transition_and_one_recovery_grant(
     migration = (
         root / "alembic" / "versions" / "0061_voice_dead_letter_reconciliation.py"
     ).read_text(encoding="utf-8")
-    worker = (root / "app" / "worker" / "dropbox_calls.py").read_text(
+    worker = (root / "app" / "worker" / "telegram_voice_recovery.py").read_text(
         encoding="utf-8"
     )
 

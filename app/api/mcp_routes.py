@@ -309,14 +309,14 @@ async def mcp_endpoint(
                 description=exc.description,
             )
         if tool_name == "gate_get_status":
-            snapshot = await build_status_snapshot(
+            snapshot, calls_reasons = await build_status_snapshot(
                 session=session,
                 settings=settings,
                 principal=principal,
                 protocol_version=MCP_PROTOCOL_VERSION,
                 tool_names=MCP_LEGACY_STATUS_TOOL_NAMES,
             )
-            return _tool_result(snapshot, format_status_text(snapshot), request_id)
+            return _tool_result(snapshot, format_status_text(snapshot, calls_reasons), request_id)
         if tool_name == "gate_alpha_list_installations":
             return await _alpha_list_installations_tool_result(
                 request_id=request_id,
