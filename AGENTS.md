@@ -44,16 +44,15 @@ worker or product acceptance, or request any operation through AQUB issues,
 workflows or credentials. Old routes/grants, including Gate745, are superseded.
 Historical contracts and migrations do not authorize reactivation.
 
-### Public visibility preparation — Gate789, NEW_UNRELEASED
+### Public visibility preparation — historical Gate789 scope
 
-This source package prepares a Gate-local copy of the narrow Ops Gate-only executor.
-Its upstream is Ops `02ef5f1c6f4273ca2a3194643383d646dbf37648`; its actual executor
-revision is the checked-out Gate workflow SHA, recorded separately in receipts.
-In this unmerged PR797 activation candidate (#799), `.github/workflows/ops-deploy.yml`
-removes only the literal OFF gate; owner/main/SHA/target/environment/token and receipt
-checks remain. Main still has literal OFF. This source does not authorize a live
-release: exact-source acceptance, current provider/UNKNOWN reconciliation, recovery
-and a separate owner grant remain required. W1 defaults OFF; S1 stays OFF.
+Gate owns the narrow Gate-only executor derived from Ops
+`02ef5f1c6f4273ca2a3194643383d646dbf37648`. Its actual executor revision is
+the checked-out Gate workflow SHA recorded in each receipt. The historical
+activation candidate #799 and independent review stay in the project record.
+Deployments through the registered route still require exact-source acceptance,
+current provider/UNKNOWN reconciliation, recovery and the applicable owner gate.
+W1 maintenance remains default-off and S1 stays OFF under their own controls.
 Ops remains private and continues source maintenance/review.
 
 The four private Ops dependencies in `gate-snapshot-cutover.yml` are explicitly
@@ -63,13 +62,16 @@ claim compatibility. Do not execute it or treat this change as S1 acceptance.
 As of 2026-11-05, the read-only history scanner ran once; source registration and
 its scoped findings triage are recorded in [Gate789 checkpoint](https://github.com/markmalina/gate/issues/789#issuecomment-6666029141)
 and [Delta515](https://github.com/AlphaCenter/delta/issues/515#issuecomment-6666171645).
-Main's deployment route remains OFF; this unmerged candidate grants no live release.
 Do not repeat the scan merely to obtain a green check.
 NO_FINDINGS covers only fetched Git refs under its scanner rules; it cannot clear issues, comments, attachments,
 unreachable objects, LFS payloads or runtime data. Publication remains a separate
 owner action after review. See `docs/operations/GATE-PUBLIC-PREP.md`.
 
-### Production deploy route (unmerged owner-gated activation candidate)
+### Production deploy route
+
+The registered Gate-only route is operational. See the
+[latest verified runtime release](https://github.com/markmalina/gate/actions/runs/45686653999) and
+[current state](docs/GATE-CURRENT.md). Each release requires its own valid gate.
 
 Gate owns `.github/workflows/ops-deploy.yml` and control issue #751.
 After the exact owner Gate-only release gate and exact-head checks, post only:
