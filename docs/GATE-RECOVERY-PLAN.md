@@ -7,7 +7,7 @@
 > C2/C3 для короткого Calls приняты ([#788](https://github.com/markmalina/gate/issues/788#issuecomment-7084006245)).
 > Полный текст длинного звонка C1 остаётся открытым. Guard отправки установлен
 > ([#745](https://github.com/markmalina/gate/issues/745#issuecomment-7137546804)).
-> Живой контроль свежего ответа на текущей версии остаётся в [#745](https://github.com/markmalina/gate/issues/745#issuecomment-7183814865).
+> Живой контроль свежего ответа прошёл. [#745 закрыта](https://github.com/markmalina/gate/issues/745#issuecomment-7188923870).
 > Полный подсчёт причин Calls и выделение восстановления Telegram voice выпущены
 > ([#886](https://github.com/markmalina/gate/issues/886) и [#888](https://github.com/markmalina/gate/issues/888)).
 > Многодневное наблюдение,
