@@ -7,14 +7,17 @@ preDeployCommand = """/bin/sh -ec '
 test "$GATE_ENV" = staging
 test "$RAILWAY_ENVIRONMENT_ID" = 3c1412a1-58c6-49c2-ad4f-1f50c3c9946f
 test "$RAILWAY_SERVICE_ID" = 3d41ea2b-9439-42e4-8399-de85da05ad9d
-if test -n "${GATE_S1_BOOTSTRAP_ADMIN_DSN:-}"; then
-    python -m app.personal_telegram.stage_database_once
+test -z "${GATE_S1_BOOTSTRAP_ADMIN_DSN:-}"
+export DATABASE_URL="${GATE_PERSONAL_STAGE_DATABASE_URL:?}"
+alembic upgrade head
+if test "${GATE_S1_PREPARE_DATABASE_ONLY:-}" = true; then
+    alembic check
+    alembic current
+    echo gate696_s1_migrations_verified
     exit 75
 fi
 stop_at=$(date -u -d "${GATE_PERSONAL_STAGE_GRANT_EXPIRES_AT:?}" +%s)
 test "$stop_at" -gt "$(date +%s)"
-export DATABASE_URL="${GATE_PERSONAL_STAGE_DATABASE_URL:?}"
-alembic upgrade head
 python -m app.personal_telegram.work_stage provision
 '"""
 startCommand = """/bin/sh -ec '
@@ -22,6 +25,7 @@ test "$GATE_ENV" = staging
 test "$RAILWAY_ENVIRONMENT_ID" = 3c1412a1-58c6-49c2-ad4f-1f50c3c9946f
 test "$RAILWAY_SERVICE_ID" = 3d41ea2b-9439-42e4-8399-de85da05ad9d
 test -z "${GATE_S1_BOOTSTRAP_ADMIN_DSN:-}"
+test "${GATE_S1_PREPARE_DATABASE_ONLY:-}" != true
 stop_at=$(date -u -d "${GATE_PERSONAL_STAGE_GRANT_EXPIRES_AT:?}" +%s)
 remaining=$((stop_at - $(date +%s)))
 test "$remaining" -gt 0
