@@ -220,8 +220,9 @@ async def test_long_text_reconciles_uncertain_comment_without_duplicate(apply_lo
 
 
 @pytest.mark.anyio
-async def test_backfill_enrolls_only_the_exact_five_committed_sources():
-    from app.infrastructure.watch_mark_updates import enroll_mark_backfill
+@pytest.mark.parametrize("cohort_size", [1, 5, 12])
+async def test_backfill_enrolls_only_the_exact_committed_sources(cohort_size):
+    from app.infrastructure.watch_mark_updates import backfill_event_ids, enroll_mark_backfill
     from app.infrastructure.watch_voice_github import WatchVoiceError
     from sqlalchemy import select
 
@@ -234,7 +235,7 @@ async def test_backfill_enrolls_only_the_exact_five_committed_sources():
     factory = async_sessionmaker(engine, expire_on_commit=False)
     ids = []
     async with factory.begin() as session:
-        for index in range(6):
+        for index in range(cohort_size + 1):
             source = {"id": f"id:synth-{index}", "rev": "a", "server_modified": now.isoformat()}
             values = card_values(settings, source, now)
             event_id = values["id"]
@@ -259,20 +260,88 @@ async def test_backfill_enrolls_only_the_exact_five_committed_sources():
         )
 
     try:
+        assert backfill_event_ids(backfill_settings([ids[0], ids[0]])) == ()
+        if cohort_size == 12:
+            assert backfill_event_ids(backfill_settings(ids)) == ()
         with pytest.raises(WatchVoiceError, match="watch_mark_backfill_scope_mismatch"):
             await enroll_mark_backfill(
-                backfill_settings([*ids[:4], "cb480dee-1341-4bf9-9691-e91708d4453b"]),
+                backfill_settings([*ids[:cohort_size - 1], "cb480dee-1341-4bf9-9691-e91708d4453b"]),
                 factory, SCOPE,
             )
         async with factory() as session:
             assert not await has_mark_updates(session, SCOPE)
         for _ in range(2):
-            await enroll_mark_backfill(backfill_settings(ids[:5]), factory, SCOPE)
+            await enroll_mark_backfill(backfill_settings(ids[:cohort_size]), factory, SCOPE)
         async with factory() as session:
             versions = dict((await session.execute(
                 select(WatchVoiceNote.id, WatchVoiceNote.mark_publish_version)
             )).all())
-            assert versions == {event_id: int(i < 5) for i, event_id in enumerate(ids)}
+            assert versions == {event_id: int(i < cohort_size) for i, event_id in enumerate(ids)}
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_operator_delivery_counts_use_only_current_mark_receipts():
+    from app.infrastructure.watch_voice_actions import operational_status
+    from app.models.billing import BillingBudgetReservationModel
+    from app.models.canonical import Workspace
+    from app.models.watch_voice import WatchVoiceDrainRun, WatchVoiceRecoveryClaim
+
+    now = datetime.now(UTC)
+    settings = Settings(
+        GATE_WORKSPACE_ID="mark-personal", DROPBOX_CALL_ACCOUNT_ID="fixture",
+        GATE_WATCH_VOICE_MARK_OIDC_ENABLED=True,
+    )
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        async with engine.begin() as connection:
+            for model in (
+                Workspace, BillingBudgetReservationModel, WatchEarlyCard, WatchVoiceNote,
+                WatchVoiceDrainRun, WatchVoiceRecoveryClaim,
+            ):
+                await connection.run_sync(model.__table__.create)
+        factory = async_sessionmaker(engine)
+        cases = (
+            ({}, {}),
+            ({"delivery_state": "delivered", "mark_publish_version": 0}, None),
+            ({"delivery_state": "delivered"}, {}),
+            ({}, {"mark_published_version": 3}),
+            ({}, {"revision": "other"}),
+            ({}, {"account_id": "foreign"}),
+            ({}, {"mark_published_at": None}),
+            ({}, {"mark_update_blocked": True}),
+            ({"transcription_state": "unknown", "transcript": None}, {}),
+            ({"workspace_key": "foreign"}, {}),
+        )
+        async with factory.begin() as session:
+            for number, (note_changes, card_changes) in enumerate(cases, 1):
+                source = {
+                    "id": f"id:fixture-{number}", "rev": "a", "server_modified": now.isoformat(),
+                }
+                card = card_values(settings, source, now)
+                note = dict(
+                    id=card["id"], **SCOPE, file_id=source["id"], revision=source["rev"],
+                    source_path="/Alpha/Voice/test.m4a", filename="test.m4a",
+                    media_type="audio/mp4", size_bytes=3, sha256="fixture", data=b"abc",
+                    received_at=now, dropbox_modified_at=now, webhook_archived=True,
+                    transcription_state="transcribed", transcript="synthetic",
+                    mark_publish_version=4,
+                )
+                session.add(WatchVoiceNote(**(note | note_changes)))
+                if card_changes is not None:
+                    card.update(
+                        state="saved", issue_number=number,
+                        issue_url=f"https://github.com/markmalina/mark/issues/{number}",
+                        mark_published_version=4, mark_published_at=now,
+                    )
+                    session.add(WatchEarlyCard(**(card | card_changes)))
+
+        async with factory() as session:
+            status = await operational_status(session, settings, scope_allowed=True)
+            assert status["delivery_counts"] == {"delivered": 3, "pending": 6}
+            assert status["transcription_counts"] == {"transcribed": 8, "unknown": 1}
+            assert status["private_content_exposed"] is False
     finally:
         await engine.dispose()
 

@@ -25,6 +25,7 @@ from app.models.billing import (
 )
 from app.models.canonical import Workspace
 from app.models.watch_voice import (
+    WatchEarlyCard,
     WatchVoiceDrainRun,
     WatchVoiceNote,
     WatchVoicePostPaymentClaim,
@@ -50,6 +51,7 @@ async def seed(factory, world, *, hard_limit=3_000_000):
             BillingBudgetReservationModel.__table__,
             BillingUsageEventModel.__table__,
             BillingLedgerEntryModel.__table__,
+            WatchEarlyCard.__table__,
             WatchVoiceDrainRun.__table__,
             WatchVoiceRecoveryClaim.__table__,
             WatchVoicePostPaymentClaim.__table__,
