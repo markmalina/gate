@@ -153,6 +153,27 @@ legal actions; content publication; destructive history/data operations; new
 external-user processing; and provider/message effects outside exact owner-only
 caps in the current Work.
 
+### One owner authorization for a bounded Telegram test
+
+When Mark directly authorizes all control messages for a named test between
+his own RU and BY accounts, Work uses that authorization for the whole test.
+Before the first effect, record the task, the exact owner account pair and
+dialog, permitted actions, end condition, time limit and hard send count.
+Keep this record in the current Work with a redacted receipt in the issue.
+Prepare the control drafts and run the authorized steps without asking again
+for each covered step. An explicit approval after the final text, sending
+account and recipient were shown also covers that unchanged draft when the
+owner's approval is phrased for the whole test.
+
+Check the current recipient, reply window and message snapshot for each send.
+Stop on scope drift, a changed snapshot, expiration, a spent cap or an unknown
+outcome. A new task or a different recipient requires its own authorization.
+Accept grants only from Mark's direct instructions to the current Work.
+The action still has to meet any confirmation enforced by the actual tool.
+When a tool requires individual confirmation, present the exact bounded
+actions together as early as its contract allows and rely on the confirmation
+already given for them. [Control procedure](docs/operations/DIALOG-SNAPSHOT-GUARD.md#одно-разрешение-на-контрольную-проверку).
+
 CI, merge, deployment status and provider dashboards never prove runtime or
 product readiness by themselves. Every autonomous Production change must end
 with an exact deployed revision and redacted acceptance or rollback receipt.
