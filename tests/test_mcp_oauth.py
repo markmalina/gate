@@ -191,3 +191,42 @@ async def test_symmetric_algorithms_are_never_accepted() -> None:
         )
 
     assert exc_info.value.error == "invalid_token"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "client_claims", [{}, {"azp": True}, {"client_id": " "}, {"azp": "work", "client_id": "other"}]
+)
+async def test_personal_scope_requires_unambiguous_verified_client(signing_key, client_claims):
+    token = jwt.encode(
+        _claims(scope="gate:personal:send_text", **client_claims),
+        signing_key,
+        algorithm="RS256",
+        headers={"kid": "test"},
+    )
+    with pytest.raises(McpOAuthError) as error:
+        await authenticate_mcp_oauth(
+            authorization=f"Bearer {token}",
+            settings=_settings(),
+            required_scope="gate:personal:send_text",
+        )
+    assert error.value.error == "invalid_token"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "client_claims", [{"azp": "work"}, {"client_id": "work"}, {"azp": "work", "client_id": "work"}]
+)
+async def test_personal_principal_keeps_signed_issuer_and_client(signing_key, client_claims):
+    token = jwt.encode(
+        _claims(scope="gate:personal:send_text", **client_claims),
+        signing_key,
+        algorithm="RS256",
+        headers={"kid": "test"},
+    )
+    principal = await authenticate_mcp_oauth(
+        authorization=f"Bearer {token}",
+        settings=_settings(),
+        required_scope="gate:personal:send_text",
+    )
+    assert principal.oauth_issuer == ISSUER and principal.oauth_client_id == "work"

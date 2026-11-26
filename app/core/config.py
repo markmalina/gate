@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     action_bearer_token: str = Field(default="", validation_alias="ACTION_BEARER_TOKEN")
     admin_bearer_token: str = Field(default="", validation_alias="ADMIN_BEARER_TOKEN")
     gate_mcp_enabled: bool = Field(default=False, validation_alias="GATE_MCP_ENABLED")
+    gate_personal_command_tools_enabled: bool = Field(
+        default=False, validation_alias="GATE_PERSONAL_COMMAND_TOOLS_ENABLED"
+    )
     mcp_auth_mode: str = Field(default="temporary_bearer", validation_alias="MCP_AUTH_MODE")
     mcp_authorization_server: str = Field(default="", validation_alias="MCP_AUTHORIZATION_SERVER")
     mcp_public_resource_url: str = Field(default="", validation_alias="MCP_PUBLIC_RESOURCE_URL")

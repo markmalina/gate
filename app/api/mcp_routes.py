@@ -31,11 +31,17 @@ from app.api.mcp_reply_context import (
     _format_reply_context_text,
 )
 from app.api.mcp_results import bounded_limit as _bounded_limit
-from app.api.mcp_results import JSONRPC_VERSION
+from app.api.mcp_results import JSONRPC_VERSION, MCP_PROTOCOL_VERSION, read_mcp_payload
+from app.api.mcp_results import jsonrpc_error as _jsonrpc_error
 from app.api.mcp_results import jsonrpc_result as _jsonrpc_result
 from app.api.mcp_results import tool_error_result as _tool_error_result
 from app.api.mcp_results import tool_result as _tool_result
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
+from app.api.personal_command_mcp import (
+    PERSONAL_COMMAND_SCOPES,
+    personal_command_call,
+    personal_command_tools,
+)
 from app.api.mcp_status import build_status_snapshot, format_status_text
 from app.api.mcp_media import PREPARE_INPUT_SCHEMA, PREVIEW_INPUT_SCHEMA, media_tool_result
 from app.api.health_routes import _get_worker_health_registry
@@ -122,7 +128,6 @@ db_session_dependency = Depends(get_db_session)
 telegram_client_dependency = Depends(get_telegram_client)
 
 JsonObject = dict[str, Any]
-MCP_PROTOCOL_VERSION = "2025-06-18"
 
 READ_ONLY_TOOL_ANNOTATIONS: JsonObject = {
     "readOnlyHint": True,
@@ -191,24 +196,7 @@ _MAX_MCP_BODY_BYTES = 34 * 1024 * 1024
 
 
 async def _read_mcp_request(request: Request) -> JsonObject:
-    declared = request.headers.get("content-length")
-    if declared is not None:
-        if not declared.isascii() or not declared.isdecimal() or len(declared) > 20:
-            raise HTTPException(status_code=400, detail="Invalid Content-Length")
-        if int(declared) > _MAX_MCP_BODY_BYTES:
-            raise HTTPException(status_code=413, detail="MCP request is too large")
-    body = bytearray()
-    async for chunk in request.stream():
-        if len(body) + len(chunk) > _MAX_MCP_BODY_BYTES:
-            raise HTTPException(status_code=413, detail="MCP request is too large")
-        body.extend(chunk)
-    try:
-        payload = json.loads(body)
-    except (ValueError, RecursionError) as exc:
-        raise HTTPException(status_code=422, detail="Invalid JSON-RPC body") from exc
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=422, detail="JSON-RPC body must be an object")
-    return payload
+    return await read_mcp_payload(request, limit=_MAX_MCP_BODY_BYTES)
 
 
 @router.post("/mcp")
@@ -276,7 +264,7 @@ async def mcp_endpoint(
                     _gate_alpha_verify_review_replay_tool(settings),
                     _gate_beta_export_space_checkpoint_tool(settings),
                     _gate_beta_get_provider_probe_tool(settings),
-                ]
+                ] + personal_command_tools(settings)
             },
         )
     if method == "tools/call":
@@ -284,7 +272,16 @@ async def mcp_endpoint(
         if not isinstance(params, dict):
             return _jsonrpc_error(request_id=request_id, code=-32602, message="Invalid params")
         tool_name = params.get("name")
-        arguments = params.get("arguments")
+        arguments = params.get("arguments", {})
+        if isinstance(tool_name, str) and tool_name in PERSONAL_COMMAND_SCOPES:
+            return await personal_command_call(
+                request=request,
+                request_id=request_id,
+                tool_name=tool_name,
+                arguments=arguments,
+                authorization=authorization,
+                settings=settings,
+            )
         if not isinstance(arguments, dict):
             arguments = {}
         if tool_name not in MCP_TOOL_SCOPES:
@@ -2332,14 +2329,6 @@ def _format_unanswered_text(inbox: JsonObject) -> str:
 
 def _commit(settings: Settings) -> str:
     return settings.deployment_sha[:12] if settings.deployment_sha != "unknown" else "unknown"
-
-
-def _jsonrpc_error(*, request_id: Any, code: int, message: str) -> JsonObject:
-    return {
-        "jsonrpc": JSONRPC_VERSION,
-        "id": request_id,
-        "error": {"code": code, "message": message},
-    }
 
 
 def _gate_media_tool(settings: Settings, *, prepare: bool) -> JsonObject:

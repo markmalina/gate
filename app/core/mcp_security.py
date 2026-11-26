@@ -30,6 +30,8 @@ class Principal:
     auth_method: str
     scopes: frozenset[str]
     access_scope: AccessScope
+    oauth_issuer: str | None = None
+    oauth_client_id: str | None = None
 
 
 def bearer_token_matches(authorization: str | None, expected_token: str) -> bool:
