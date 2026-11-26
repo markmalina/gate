@@ -4,7 +4,11 @@ Canonical execution: [Gate #696](https://github.com/AlphaCenter/gate/issues/696)
 Architecture proposal: [PR #759](https://github.com/AlphaCenter/gate/pull/759).
 Source baseline: `461088d68d047e4cd08c7a4f581300d591af241e`.
 
-## What this package actually provides
+The original V0/V1 baseline is recorded below. The current S1 entry point, schema,
+scoped OAuth client, writer inventory and acceptance steps supersede its setup
+notes. See [the Work S1 runbook](MTPROTO_RU_WORK_S1.md).
+
+## Historical V0/V1 baseline
 
 This is the bounded V0/V1 **source foundation**, not completion of either sprint.
 It adds executable contracts and an unbound RU worker core. Importing it does not

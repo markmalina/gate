@@ -1,0 +1,59 @@
+name: Gate-local Ops-derived deploy (NEW_UNRELEASED)
+description: Deploy only Gate current main through its independent owner command
+inputs:
+  target:
+    description: Only gate is allowed
+    required: true
+  executor-source-sha:
+    description: Exact checked-out Gate workflow source SHA (not the upstream Ops SHA)
+    required: true
+  expected-source-sha:
+    description: Exact reviewed current Gate main SHA
+    required: true
+outputs:
+  result:
+    value: ${{ steps.deploy.outputs.result }}
+  receipt-path:
+    value: ${{ steps.deploy.outputs.receipt-path }}
+  receipt-digest:
+    value: ${{ steps.deploy.outputs.receipt-digest }}
+runs:
+  using: composite
+  steps:
+    - name: Use exact Node runtime
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      env:
+        RAILWAY_PROJECT_TOKEN: ""
+        AGENT_OPS_SOURCE_GITHUB_TOKEN: ""
+      with:
+        node-version: 24.19.0
+        check-latest: false
+        package-manager-cache: false
+
+    - id: deploy
+      name: Deploy allowlisted current main
+      shell: bash
+      env:
+        AGENT_OPS_DEPLOY_TARGET: ${{ inputs.target }}
+        AGENT_OPS_EXPECTED_SOURCE_SHA: ${{ inputs.expected-source-sha }}
+        AGENT_OPS_CALLER_REPOSITORY: ${{ github.repository }}
+        AGENT_OPS_EVENT_NAME: ${{ github.event_name }}
+        AGENT_OPS_REF: ${{ github.ref }}
+        AGENT_OPS_WORKFLOW_REF: ${{ github.workflow_ref }}
+        AGENT_OPS_RUN_ID: ${{ github.run_id }}
+        AGENT_OPS_RUN_ATTEMPT: ${{ github.run_attempt }}
+        AGENT_OPS_ACTOR: ${{ github.actor }}
+        AGENT_OPS_ACTOR_ID: ${{ github.actor_id }}
+        AGENT_OPS_EXECUTOR_REPOSITORY: ${{ github.repository }}
+        AGENT_OPS_CALLER_REPOSITORY_ID: ${{ github.repository_id }}
+        AGENT_OPS_EXECUTOR_SOURCE_SHA: ${{ github.sha }}
+        AGENT_OPS_WORKFLOW_SHA: ${{ github.workflow_sha }}
+        AGENT_OPS_CHECKED_OUT_SHA: ${{ inputs.executor-source-sha }}
+        RAILWAY_PROJECT_TOKEN: ${{ env.RAILWAY_PROJECT_TOKEN }}
+        AGENT_OPS_SOURCE_GITHUB_TOKEN: ${{ env.AGENT_OPS_SOURCE_GITHUB_TOKEN }}
+      run: |
+        set -euo pipefail
+        test "$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)" = "$AGENT_OPS_EXECUTOR_SOURCE_SHA"
+        test -z "$(git -C "$GITHUB_WORKSPACE" status --porcelain --untracked-files=no)"
+        node "${{ github.action_path }}/gate-deploy.mjs"
+

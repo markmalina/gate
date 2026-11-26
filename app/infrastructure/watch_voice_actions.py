@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -21,6 +21,7 @@ from app.core.watch_voice_actions_oidc import (
     REPOSITORY_ID,
     WORKFLOW_PATH,
 )
+from app.infrastructure.watch_mark_updates import mark_publication_source
 from app.infrastructure.watch_voice_github import MarkInboxClient, WatchVoiceError
 from app.infrastructure.watch_voice_post_payment import continue_note
 from app.infrastructure.watch_voice_recovery import (
@@ -29,7 +30,10 @@ from app.infrastructure.watch_voice_recovery import (
     authorized_at,
     recover_note,
 )
+from app.infrastructure.watch_voice_w1 import W1Admission
 from app.models.watch_voice import (
+    WatchEarlyCard,
+    WatchEarlyCursor,
     WatchVoiceCursor,
     WatchVoiceDrainRun,
     WatchVoiceNote,
@@ -272,7 +276,7 @@ async def bound_settings(
             for name, field in Settings.model_fields.items()
         }
     )
-    worker.validate_settings(scoped)
+    worker.validate_settings(scoped, require_stt=not settings.gate_watch_voice_early_cards_only)
     return scoped
 
 
@@ -299,13 +303,42 @@ async def drain(
     claims: dict[str, Any],
     job_token: str,
 ) -> dict[str, Any]:
+    admission = None
+    if settings.gate_watch_voice_w1_enabled:
+        try:
+            admission = W1Admission.from_settings(settings)
+        except (ValueError, TypeError, KeyError):
+            raise WatchVoiceError("watch_voice_w1_admission_invalid") from None
+        if not admission.active():
+            raise WatchVoiceError("watch_voice_w1_admission_inactive")
     client = ActionsInboxClient(http, job_token)
     binding = await client.preflight_actions(
         claims, settings.gate_watch_voice_actions_workflow_sha256
     )
+    if admission is not None and binding["scope"] != "future-only":
+        raise WatchVoiceError("watch_voice_w1_future_only_required")
+    if settings.gate_watch_voice_early_cards_only and (
+        admission is not None or binding["scope"] != "future-only"
+    ):
+        raise WatchVoiceError("watch_voice_early_card_scope_mismatch")
     scoped = await bound_settings(settings, binding, factory, job_token=job_token)
     if not await claim_run(factory, claims):
         return result("replayed")
+    if settings.gate_watch_voice_early_cards_only:
+        from app.infrastructure.watch_voice_early_cards import run_early_cards
+
+        return await run_early_cards(scoped, factory, http, client)
+    # Do not let the legacy publisher create a second issue after an early-card
+    # lane has been initialized. A future integration must share its receipts.
+    async with factory() as session:
+        early = await session.get(
+            WatchEarlyCursor, (settings.gate_workspace_id, settings.dropbox_call_account_id)
+        )
+        if early is not None:
+            raise WatchVoiceError("watch_voice_early_card_handoff_required")
+    if admission is not None:
+        # Always returns: never recovery, cursor initialization, stale sweep or scan.
+        return await _process_w1_note(scoped, factory, http, client, admission)
     if binding["scope"] == "initial-quota-probe":
         recovered_note = await recover_note(
             scoped, factory, http, binding, authorization_sha=claims["sha"]
@@ -344,6 +377,12 @@ async def drain(
         )
         if state is None:
             return result("deferred")
+        # Durable work must not depend on availability or validity of a new delta.
+        # Binding, cutover, and coordinator guards still precede every effect.
+        payload = await _process_queued_note(scoped, factory, http, client, binding, state)
+        if payload is not None:
+            await coordinator.commit()
+            return payload
         token = await _refresh_access_token(scoped, http)
         await _verify_account_id(scoped, http, token)
         cursor = state.cursor
@@ -406,63 +445,128 @@ async def drain(
                 break
         else:
             raise WatchVoiceError("watch_voice_actions_delta_page_limit")
-        scope = worker.note_scope(scoped)
-        if binding["scope"] == "future-only":
-            if state.future_cutover_at is None:
-                raise WatchVoiceError("watch_voice_actions_cutover_required")
-            scope += (
-                WatchVoiceNote.received_at >= state.future_cutover_at,
-                WatchVoiceNote.dropbox_modified_at > state.future_cutover_at,
+        payload = await _process_queued_note(scoped, factory, http, client, binding, state)
+        await coordinator.commit()
+        return payload if payload is not None else result("idle")
+
+
+async def _process_w1_note(
+    scoped: Settings,
+    factory: async_sessionmaker[AsyncSession],
+    http: httpx.AsyncClient,
+    client: ActionsInboxClient,
+    admission: W1Admission,
+) -> dict[str, Any]:
+    """Existing coordinator + claims; only this archived row, no discovery fallback."""
+    async with factory() as coordinator:
+        state = await coordinator.scalar(
+            select(WatchVoiceCursor)
+            .where(
+                WatchVoiceCursor.workspace_key == scoped.gate_workspace_id,
+                WatchVoiceCursor.account_id == scoped.dropbox_call_account_id,
             )
-        stale = datetime.now(UTC) - timedelta(hours=1)
+            .with_for_update(skip_locked=True)
+        )
+        if state is None or not state.cursor or state.future_cutover_at is None:
+            return result("deferred")
         async with factory() as session:
-            for field, active, error in (
-                (
-                    WatchVoiceNote.transcription_state,
-                    "processing",
-                    "watch_voice_stale_transcription",
-                ),
-                (WatchVoiceNote.delivery_state, "sending", "watch_voice_stale_publication"),
-            ):
-                await session.execute(
-                    update(WatchVoiceNote)
-                    .where(
-                        *scope,
-                        WatchVoiceNote.attempted_at < stale,
-                        field == active,
-                    )
-                    .values({field.key: "unknown", "last_error": error})
-                )
-            await session.commit()
-            note = await session.scalar(
-                select(WatchVoiceNote)
-                .where(
-                    *scope,
-                    or_(
-                        WatchVoiceNote.transcription_state == "received",
-                        (WatchVoiceNote.transcription_state == "transcribed")
-                        & WatchVoiceNote.delivery_state.in_(("pending", "unknown")),
-                    ),
-                )
-                .order_by(WatchVoiceNote.received_at, WatchVoiceNote.id)
-                .limit(1)
-            )
-        if note is None:
-            await coordinator.commit()
+            note = await session.get(WatchVoiceNote, admission.event_id)
+        if note is None or not admission.active() or not admission.matches(note):
+            return result("deferred")
+        cutover = _utc(state.future_cutover_at)
+        if _utc(note.received_at) < cutover or _utc(note.dropbox_modified_at) <= cutover:
+            return result("deferred")
+        if note.delivery_state == "delivered":
             return result("idle")
+        if note.delivery_state not in {"pending", "unknown"}:
+            return result("deferred")
         if note.transcription_state == "received":
+            # Do not turn a historical/uncertain attempt into fresh received work.
+            if (
+                note.delivery_state != "pending"
+                or note.attempted_at is not None
+                or note.last_error is not None
+                or note.transcript is not None
+                or note.transcribed_at is not None
+                or note.model is not None
+                or note.next_part != 0
+                or note.issue_number is not None
+                or note.issue_url is not None
+            ):
+                return result("deferred")
             await worker.transcribe_note(scoped, factory, http, note.id)
             async with factory() as session:
-                refreshed = await session.get(WatchVoiceNote, note.id)
-            if refreshed is None:
-                raise WatchVoiceError("watch_voice_actions_note_missing")
-            note = refreshed
-        if note.transcription_state != "transcribed":
-            await coordinator.commit()
-            return result("processed", considered=1)
-        payload = await publish_result(factory, client, note)
-        await coordinator.commit()
-        return payload
+                note = await session.get(WatchVoiceNote, admission.event_id)
+            # An admitted in-flight STT may finish after expiry. No new publication then.
+            if note is None or not admission.active() or not admission.matches(note):
+                return result("deferred")
+        if note.transcription_state != "transcribed" or not admission.active():
+            return result("deferred")
+        return await publish_result(factory, client, note)
+
+
+async def _process_queued_note(
+    scoped: Settings,
+    factory: async_sessionmaker[AsyncSession],
+    http: httpx.AsyncClient,
+    client: ActionsInboxClient,
+    binding: dict[str, Any],
+    state: WatchVoiceCursor,
+) -> dict[str, Any] | None:
+    """Consume one eligible durable note; caller holds the intake coordinator lock."""
+    scope = worker.note_scope(scoped)
+    if binding["scope"] == "future-only":
+        if state.future_cutover_at is None:
+            raise WatchVoiceError("watch_voice_actions_cutover_required")
+        scope += (
+            WatchVoiceNote.received_at >= state.future_cutover_at,
+            WatchVoiceNote.dropbox_modified_at > state.future_cutover_at,
+        )
+    stale = datetime.now(UTC) - timedelta(hours=1)
+    async with factory() as session:
+        for field, active, error in (
+            (
+                WatchVoiceNote.transcription_state,
+                "processing",
+                "watch_voice_stale_transcription",
+            ),
+            (WatchVoiceNote.delivery_state, "sending", "watch_voice_stale_publication"),
+        ):
+            await session.execute(
+                update(WatchVoiceNote)
+                .where(
+                    *scope,
+                    WatchVoiceNote.attempted_at < stale,
+                    field == active,
+                )
+                .values({field.key: "unknown", "last_error": error})
+            )
+        await session.commit()
+        note = await session.scalar(
+            select(WatchVoiceNote)
+            .where(
+                *scope,
+                or_(
+                    WatchVoiceNote.transcription_state == "received",
+                    (WatchVoiceNote.transcription_state == "transcribed")
+                    & WatchVoiceNote.delivery_state.in_(("pending", "unknown")),
+                ),
+            )
+            .order_by(WatchVoiceNote.received_at, WatchVoiceNote.id)
+            .limit(1)
+        )
+    if note is None:
+        return None
+    if note.transcription_state == "received":
+        await worker.transcribe_note(scoped, factory, http, note.id)
+        async with factory() as session:
+            refreshed = await session.get(WatchVoiceNote, note.id)
+        if refreshed is None:
+            raise WatchVoiceError("watch_voice_actions_note_missing")
+        note = refreshed
+    if note.transcription_state != "transcribed":
+        return result("processed", considered=1)
+    return await publish_result(factory, client, note)
 
 
 async def publish_result(
@@ -500,12 +604,40 @@ async def operational_status(
             WatchVoiceNote.workspace_key == settings.gate_workspace_id,
             WatchVoiceNote.account_id == settings.dropbox_call_account_id,
         )
-        for field, target in (
-            (WatchVoiceNote.delivery_state, delivery_counts),
-            (WatchVoiceNote.transcription_state, transcription_counts),
-        ):
-            rows = await session.execute(select(field, func.count()).where(*scope).group_by(field))
-            target.update({str(state): count for state, count in rows})
+        # The Mark App confirms publication in the card journal, not the legacy
+        # per-note delivery field. Count each note once across both paths.
+        delivered_to_mark = and_(
+            mark_publication_source(),
+            WatchVoiceNote.transcription_state == "transcribed",
+            WatchVoiceNote.transcript.is_not(None),
+            WatchVoiceNote.transcript != "",
+            WatchVoiceNote.mark_publish_version > 0,
+            WatchEarlyCard.state == "saved",
+            WatchEarlyCard.issue_number > 0,
+            WatchEarlyCard.issue_url.is_not(None),
+            WatchEarlyCard.mark_published_version == WatchVoiceNote.mark_publish_version,
+            WatchEarlyCard.mark_published_at.is_not(None),
+            WatchEarlyCard.mark_update_blocked.is_(False),
+            WatchEarlyCard.mark_update_error.is_(None),
+        )
+        delivery = case((delivered_to_mark, "delivered"), else_=WatchVoiceNote.delivery_state)
+        rows = await session.execute(
+            select(delivery, func.count()).select_from(WatchVoiceNote)
+            .outerjoin(WatchEarlyCard, and_(
+                WatchEarlyCard.id == WatchVoiceNote.id,
+                WatchEarlyCard.workspace_key == WatchVoiceNote.workspace_key,
+                WatchEarlyCard.account_id == WatchVoiceNote.account_id,
+                WatchEarlyCard.file_id == WatchVoiceNote.file_id,
+                WatchEarlyCard.revision == WatchVoiceNote.revision,
+            ))
+            .where(*scope).group_by(delivery)
+        )
+        delivery_counts.update({str(state): count for state, count in rows})
+        transcription = WatchVoiceNote.transcription_state
+        rows = await session.execute(
+            select(transcription, func.count()).where(*scope).group_by(transcription)
+        )
+        transcription_counts.update({str(state): count for state, count in rows})
         runs = int(await session.scalar(select(func.count()).select_from(WatchVoiceDrainRun)) or 0)
         rows = await session.execute(
             select(WatchVoiceRecoveryClaim.outcome, func.count())

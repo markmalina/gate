@@ -16,9 +16,12 @@ permissions:
   issues: read
 
 jobs:
+  # Unmerged owner-gated activation candidate (#799); no live release grant.
   deploy:
     if: >-
       ${{
+        github.repository == 'markmalina/gate' &&
+        github.repository_id == '1293746267' &&
         github.run_attempt == 1 &&
         github.ref == 'refs/heads/main' &&
         github.actor == 'markmalina' &&
@@ -63,12 +66,37 @@ jobs:
           [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
 
+      - name: Checkout exact trusted Gate executor
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify executor source
+        id: source
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          APPROVED_SOURCE_SHA: ${{ steps.request.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$APPROVED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$WORKFLOW_SHA" = "$EXPECTED_SHA"
+          test "$APPROVED_SOURCE_SHA" = "$EXPECTED_SHA"
+          echo "sha=$EXPECTED_SHA" >> "$GITHUB_OUTPUT"
+
       - id: deploy
-        name: Deploy through Ops
+        name: Deploy through Gate-local Ops-derived executor
         continue-on-error: true
-        uses: AlphaCenter/ops/agent-ops/actions/gate-deploy@7bd47fe1c646f30c87207dc513cd1e5990d23a78
+        uses: ./.github/actions/gate-deploy
         with:
           target: gate
+          executor-source-sha: ${{ steps.source.outputs.sha }}
           expected-source-sha: ${{ steps.request.outputs.source_sha }}
         env:
           RAILWAY_PROJECT_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
@@ -92,8 +120,12 @@ jobs:
         env:
           RESULT: ${{ steps.deploy.outputs.result }}
           RECEIPT: ${{ steps.deploy.outputs.receipt-digest }}
+          APPROVED_SOURCE_SHA: ${{ steps.request.outputs.source_sha }}
+          EXECUTOR_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          CHECKED_OUT_SHA: ${{ steps.source.outputs.sha }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
-          printf 'result=%s receipt=%s\n' "${RESULT:-missing}" "${RECEIPT:-missing}"
-          test "$RESULT" = SUCCEEDED
+          node .github/actions/gate-deploy/release-checks.mjs
 

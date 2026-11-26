@@ -51,7 +51,7 @@ if TYPE_CHECKING:
 
 
 class PersonalRuntimeBase(DeclarativeBase):
-    """Staged schema; activation requires an explicit reviewed migration package."""
+    """Schema for the RU command journal and its installation-scoped permissions."""
 
 
 class RuntimeBindingRow(PersonalRuntimeBase):
@@ -62,11 +62,15 @@ class RuntimeBindingRow(PersonalRuntimeBase):
         ),
         UniqueConstraint("workspace", "account_id", name="uq_personal_command_workspace_ru"),
         CheckConstraint(
+            "custody_state <> 'synthetic' OR (length(ciphertext) = 0 AND lease_owner IS NULL)",
+            name="ck_personal_command_synthetic_binding",
+        ),
+        CheckConstraint(
             "revision >= 0 AND session_generation > 0 AND lease_generation >= 0",
             name="ck_personal_command_generations",
         ),
         CheckConstraint(
-            "custody_state IN ('prepared','transition','revoked')",
+            "custody_state IN ('prepared','transition','revoked','synthetic')",
             name="ck_personal_command_custody_state",
         ),
     )
@@ -277,14 +281,14 @@ class SqlCommandStore:
             raise CommandRuntimeError("session_scope_denied")
         async with self.sessions.begin() as session:
             row = await self._binding(session)
-            if row.revision != expected_revision or row.custody_state == "revoked":
+            if row.revision != expected_revision or row.custody_state in {"revoked", "synthetic"}:
                 raise CommandRuntimeError("session_revision_conflict")
             revision = await session.scalar(
                 update(RuntimeBindingRow)
                 .where(
                     RuntimeBindingRow.id == row.id,
                     RuntimeBindingRow.revision == expected_revision,
-                    RuntimeBindingRow.custody_state != "revoked",
+                    RuntimeBindingRow.custody_state.not_in(("revoked", "synthetic")),
                 )
                 .values(
                     ciphertext=ciphertext,

@@ -4,20 +4,29 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
     Text,
     UniqueConstraint,
+    case,
+    false,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.models.audio_processing import AudioProcessingMilestones
 from app.models.domain import Base
 
 
@@ -30,9 +39,91 @@ class WatchVoiceCursor(Base):
     future_cutover_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class WatchVoiceNote(Base):
+class WatchEarlyCursor(Base):
+    __tablename__ = "watch_early_cursors"
+
+    workspace_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    cursor: Mapped[str | None] = mapped_column(Text)
+    cutover_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    writer_mode: Mapped[str] = mapped_column(String(16), server_default="legacy_actions")
+    writer_generation: Mapped[int] = mapped_column(Integer, server_default="0")
+    wake_generation: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    wake_processed_generation: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    wake_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WatchEarlyCard(Base):
+    __tablename__ = "watch_early_cards"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_key", "account_id", "file_id", "revision", name="uq_watch_early_source"
+        ),
+        CheckConstraint(
+            "state IN ('pending','sending','unknown','saved','blocked')",
+            name="ck_watch_early_state",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_key: Mapped[str] = mapped_column(String(128))
+    account_id: Mapped[str] = mapped_column(String(255))
+    file_id: Mapped[str] = mapped_column(String(255))
+    revision: Mapped[str] = mapped_column(String(255))
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    source_modified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    wake_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    body: Mapped[str] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(String(255))
+    state: Mapped[str] = mapped_column(String(16))
+    issue_number: Mapped[int | None] = mapped_column(Integer)
+    issue_url: Mapped[str | None] = mapped_column(String(512))
+    last_error: Mapped[str | None] = mapped_column(String(128))
+    attempt_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    archive_input: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
+    archive_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    mark_published_version: Mapped[int] = mapped_column(Integer, server_default="0")
+    mark_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    mark_update_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    mark_update_error: Mapped[str | None] = mapped_column(String(128))
+    mark_update_blocked: Mapped[bool] = mapped_column(Boolean, server_default=false())
+    mark_pending_part: Mapped[int | None] = mapped_column(Integer)
+    mark_pending_digest: Mapped[str | None] = mapped_column(String(64))
+
+
+class WatchEarlyRejection(Base):
+    __tablename__ = "watch_early_rejections"
+
+    workspace_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    metadata_sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    file_id: Mapped[str | None] = mapped_column(String(255))
+    revision: Mapped[str | None] = mapped_column(String(255))
+    reason: Mapped[str] = mapped_column(String(128))
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class WatchScheduleControl(Base):
+    __tablename__ = "watch_schedule_control"
+    __table_args__ = (
+        CheckConstraint("state IN ('idle','inflight','unknown')", name="ck_watch_schedule_state"),
+    )
+
+    name: Mapped[str] = mapped_column(String(32), primary_key=True)
+    state: Mapped[str] = mapped_column(String(16))
+    last_slot: Mapped[int] = mapped_column(Integer)
+    last_outcome: Mapped[str | None] = mapped_column(String(32))
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class WatchVoiceNote(AudioProcessingMilestones, Base):
     __tablename__ = "watch_voice_notes"
     __table_args__ = (
+        Index(
+            "ix_watch_note_mark_queue", "workspace_key", "account_id", "id",
+            postgresql_where=text("mark_publish_version > 0 AND webhook_archived"),
+        ),
         UniqueConstraint(
             "workspace_key",
             "account_id",
@@ -67,6 +158,7 @@ class WatchVoiceNote(Base):
     dropbox_modified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     transcription_state: Mapped[str] = mapped_column(String(16), default="received")
+    webhook_archived: Mapped[bool] = mapped_column(Boolean, server_default=false())
     transcript: Mapped[str | None] = mapped_column(Text)
     model: Mapped[str | None] = mapped_column(String(64))
     transcribed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -78,6 +170,14 @@ class WatchVoiceNote(Base):
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(String(128))
+
+    mark_publish_version: Mapped[int] = mapped_column(Integer, server_default="0")
+
+
+def next_mark_publish_version() -> Any:
+    """Advance only notes already enrolled in the Watch-to-Mark update queue."""
+    version = WatchVoiceNote.mark_publish_version
+    return case((version > 0, version + 1), else_=0)
 
 
 class WatchVoiceDrainRun(Base):

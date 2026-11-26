@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 from app.core.mcp_security import Principal
@@ -34,6 +34,8 @@ class SendApprovedReplyCommand:
     expected_document_size_bytes: int | None = None
     expected_document_caption: str | None = None
     expected_payload_sha256: str | None = None
+    expected_media_package_sha256: str | None = None
+    execution_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +65,7 @@ class ReplySendResult:
     draft_revision: int | None = None
     runtime_revision: str | None = None
     reservation_time: str | None = None
+    media: dict[str, Any] | None = None
 
 
 class ReplySendExecutor(Protocol):
@@ -114,6 +117,14 @@ class SendApprovedReplyService:
                 code="invalid_confirmation",
                 message="Expected payload SHA-256 must be 64 lowercase hexadecimal characters",
             )
+        if command.expected_media_package_sha256 is not None and (
+            len(command.expected_media_package_sha256) != 64
+            or any(c not in "0123456789abcdef" for c in command.expected_media_package_sha256)
+            or not command.execution_id
+        ):
+            raise ReplySendError(
+                code="invalid_confirmation", message="Exact media digest and execution are required"
+            )
         if command.expected_document_sha256 is not None:
             if (
                 len(command.expected_document_sha256) != 64
@@ -151,5 +162,7 @@ class SendApprovedReplyService:
                 expected_document_size_bytes=command.expected_document_size_bytes,
                 expected_document_caption=command.expected_document_caption,
                 expected_payload_sha256=command.expected_payload_sha256,
+                expected_media_package_sha256=command.expected_media_package_sha256,
+                execution_id=command.execution_id,
             )
         )

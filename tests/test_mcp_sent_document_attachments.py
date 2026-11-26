@@ -7,7 +7,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from app.api import mcp_routes
+from app.api import mcp_attachments
 from app.application.telegram_attachments import validated_telegram_sent_document_payload
 from app.core.config import get_settings
 from app.core.mcp_security import AccessScope, Principal
@@ -87,7 +87,7 @@ def principal() -> Principal:
 
 
 async def retrieve(session: Any, snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
-    return await mcp_routes._attachment_reply_context_tool_result(
+    return await mcp_attachments._attachment_reply_context_tool_result(
         request_id=1, context=snapshot or context(), message_id=MESSAGE, attachment_index=0,
         principal=principal(), session=session,
         settings=SimpleNamespace(telegram_bot_token="synthetic-token"),
@@ -105,7 +105,7 @@ async def test_sent_document_download_returns_original_bytes_and_rejects_bad_rec
         downloads.append(attachment.file_id)
         return CONTENT, attachment.mime_type
 
-    monkeypatch.setattr(mcp_routes, "_download_telegram_attachment", download)
+    monkeypatch.setattr(mcp_attachments, "_download_telegram_attachment", download)
     message = SimpleNamespace(source="gate-approved-document", payload=acknowledgement(),
                               telegram_message_id=42, telegram_update_id=None,
                               event_type="telegram_business_document", chat_id="300",
@@ -150,7 +150,7 @@ async def test_postgres_sent_document_retrieval_preserves_all_scope_fences(
         downloads.append(attachment.file_id)
         return CONTENT, attachment.mime_type
 
-    monkeypatch.setattr(mcp_routes, "_download_telegram_attachment", download)
+    monkeypatch.setattr(mcp_attachments, "_download_telegram_attachment", download)
     try:
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)

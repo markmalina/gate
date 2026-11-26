@@ -28,16 +28,18 @@ class GithubReceipt:
     received_at: datetime
 
 
-def transcript_parts(text: str) -> list[str]:
+def transcript_parts(
+    text: str, *, byte_limit: int = MAX_BODY_BYTES, line_prefix_bytes: int = 0,
+) -> list[str]:
     """UTF-8 bounded parts preserve every source character."""
     chunks: list[str] = []
     part: list[str] = []
-    size = 0
+    size = line_prefix_bytes
     for char in text:
-        length = len(char.encode("utf-8"))
-        if size + length > MAX_BODY_BYTES:
+        length = len(char.encode("utf-8")) + (line_prefix_bytes if char == "\n" else 0)
+        if size + length > byte_limit:
             chunks.append("".join(part))
-            part, size = [], 0
+            part, size = [], line_prefix_bytes
         part.append(char)
         size += length
     if part or not chunks:
@@ -50,9 +52,19 @@ def marker(event_id: str, part: int) -> str:
 
 
 class MarkInboxClient:
-    def __init__(self, http: httpx.AsyncClient, token: str, writer: str) -> None:
+    def __init__(
+        self,
+        http: httpx.AsyncClient,
+        token: str,
+        writer: str,
+        *,
+        legacy_writer: str | None = None,
+        reconciliation_pages: int = 100,
+    ) -> None:
         self.http = http
         self.writer = writer
+        self.legacy_writer = legacy_writer
+        self.reconciliation_pages = reconciliation_pages
         self.headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github+json",
@@ -115,7 +127,13 @@ class MarkInboxClient:
             raise WatchVoiceError("github_receipt_unknown", unknown=True) from None
 
     def receipt(
-        self, obj: dict[str, Any], *, part: int, issue_number: int | None, expected_body: str
+        self,
+        obj: dict[str, Any],
+        *,
+        part: int,
+        issue_number: int | None,
+        expected_body: str,
+        reconciliation: bool = False,
     ) -> GithubReceipt:
         number = issue_number if part else obj["number"]
         expected_url = f"https://github.com/{REPOSITORY}/issues/{number}"
@@ -124,12 +142,16 @@ class MarkInboxClient:
             if part
             else obj["html_url"] == expected_url
         )
+        writer = obj.get("user", {}).get("login")
+        expected_writers = {self.writer}
+        if reconciliation and self.legacy_writer is not None:
+            expected_writers.add(self.legacy_writer)
         # Verify exact body and writer, not a forgeable marker alone.
         if (
             type(number) is not int
             or number <= 0
             or not valid_url
-            or obj.get("user", {}).get("login") != self.writer
+            or writer not in expected_writers
             or obj.get("body") != expected_body
             or "pull_request" in obj
         ):
@@ -148,7 +170,7 @@ class MarkInboxClient:
                 raise WatchVoiceError("github_issue_receipt_missing")
             path = f"/repos/{REPOSITORY}/issues/{issue_number}/comments?per_page=100"
         found: list[GithubReceipt] = []
-        for page in range(1, 101):
+        for page in range(1, self.reconciliation_pages + 1):
             objects = await self._get(path + f"&page={page}")
             if not isinstance(objects, list):
                 raise WatchVoiceError("github_reconciliation_invalid")
@@ -157,7 +179,13 @@ class MarkInboxClient:
                     continue
                 try:
                     found.append(
-                        self.receipt(obj, part=part, issue_number=issue_number, expected_body=body)
+                        self.receipt(
+                            obj,
+                            part=part,
+                            issue_number=issue_number,
+                            expected_body=body,
+                            reconciliation=True,
+                        )
                     )
                 except (ValueError, KeyError, TypeError, AttributeError):
                     continue

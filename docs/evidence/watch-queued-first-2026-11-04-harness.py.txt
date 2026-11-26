@@ -1,0 +1,239 @@
+"""Offline control-flow checks of literal drain AST; fake ORM/effects, not DB validation."""
+from __future__ import annotations
+
+import ast
+import asyncio
+import argparse
+from datetime import UTC, datetime, timedelta
+from pathlib import Path, PurePosixPath
+from types import SimpleNamespace as NS
+import unittest
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--before", required=True, help="Exact parent Actions source")
+parser.add_argument("--after", required=True, help="Exact candidate Actions source")
+parser.add_argument("--worker", required=True, help="Unchanged exact parent Watch worker source")
+inputs, unittest_args = parser.parse_known_args()
+
+
+class Expr:
+    def __init__(self, predicate): self.predicate = predicate
+    def __call__(self, row): return self.predicate(row)
+    def __and__(self, other): return Expr(lambda row: self(row) and other(row))
+
+
+class Field:
+    def __init__(self, key): self.key = key
+    def __eq__(self, value): return Expr(lambda row: getattr(row, self.key) == value)
+    def __ge__(self, value): return Expr(lambda row: getattr(row, self.key) >= value)
+    def __gt__(self, value): return Expr(lambda row: getattr(row, self.key) > value)
+    def __lt__(self, value):
+        return Expr(lambda row: getattr(row, self.key) is not None and getattr(row, self.key) < value)
+    def is_(self, value): return self == value
+    def in_(self, values): return Expr(lambda row: getattr(row, self.key) in values)
+
+
+def model(*keys): return type("Model", (), {key: Field(key) for key in keys})
+
+
+Cursor = model("workspace_key", "account_id", "future_cutover_at")
+Note = model("workspace_key", "account_id", "id", "received_at", "dropbox_modified_at",
+             "transcription_state", "delivery_state", "attempted_at", "file_id", "revision")
+
+
+class Query:
+    def __init__(self, target, mutate=False):
+        self.target, self.mutate, self.conditions, self.changes = target, mutate, [], {}
+    def where(self, *conditions): self.conditions.extend(conditions); return self
+    def with_for_update(self, **kwargs): return self
+    def order_by(self, *args): return self
+    def limit(self, count): assert count == 1; return self
+    def values(self, changes=None, **kwargs): self.changes = changes or kwargs; return self
+    def matches(self, row): return all(condition(row) for condition in self.conditions)
+
+
+class Session:
+    def __init__(self, world): self.world = world
+    async def __aenter__(self): return self
+    async def __aexit__(self, *args): pass
+    async def scalar(self, query):
+        if query.target is Cursor: return self.world.cursor if self.world.lock else None
+        return next((row for row in self.world.notes if query.matches(row)), None)
+    async def execute(self, query):
+        rows = [self.world.cursor] if query.target is Cursor else self.world.notes
+        count = 0
+        for row in rows:
+            if query.matches(row):
+                for key, value in query.changes.items(): setattr(row, key, value)
+                count += 1
+        return NS(rowcount=count)
+    async def commit(self): pass
+    async def get(self, target, key): return next((row for row in self.world.notes if row.id == key), None)
+
+
+class Error(Exception): pass
+
+
+class World:
+    def __init__(self, queued="received", scope="initial-exact"):
+        self.calls, self.provider, self.posts, self.reconciles = [], 0, 0, 0
+        self.lock, self.authorized, self.binding_ok, self.claimed = True, True, True, False
+        self.binding = {"scope": scope}
+        self.cutover = datetime.now(UTC) - timedelta(days=1)
+        self.cursor = NS(workspace_key="mark-personal", account_id="synthetic-owner",
+                         cursor="old-cursor", future_cutover_at=self.cutover)
+        self.note = NS(id="synthetic-event", workspace_key="mark-personal",
+                       account_id="synthetic-owner", file_id="id:synthetic", revision="abc123",
+                       transcription_state=queued, delivery_state="pending", next_part=0,
+                       received_at=datetime.now(UTC), dropbox_modified_at=datetime.now(UTC),
+                       attempted_at=datetime.now(UTC), transcript=None)
+        self.notes = [] if queued is None else [self.note]
+        self.entry = {".tag":"file", "id":"id:synthetic", "rev":"abc123",
+                      "name":"Synthetic.m4a", "path_display":"/Alpha/Voice/Synthetic.m4a",
+                      "server_modified":datetime.now(UTC).isoformat(), "size":25*1024*1024+1}
+        self.settings = NS(gate_workspace_id="mark-personal", dropbox_call_account_id="synthetic-owner",
+                           gate_watch_voice_file_id="", gate_watch_voice_revision="",
+                           gate_watch_voice_actions_workflow_sha256="synthetic-pin")
+    def factory(self): return Session(self)
+    async def post(self, url, **kwargs):
+        self.calls.append("scan")
+        return NS(status_code=200, json=lambda: {"entries":[self.entry], "cursor":"new-cursor", "has_more":False})
+    def namespace(self, source):
+        world = self
+        class Client:
+            def __init__(self, *args): pass
+            async def preflight_actions(self, *args):
+                world.calls.append("auth")
+                if not world.authorized: raise Error("auth")
+                return world.binding
+        async def bound(*args, **kwargs):
+            world.calls.append("binding")
+            if not world.binding_ok: raise Error("binding")
+            return world.settings
+        async def claim(*args):
+            if world.claimed: return False
+            world.claimed = True
+            return True
+        async def ensure(*args): world.calls.append("ensure")
+        async def refresh(*args): world.calls.append("refresh"); return "synthetic"
+        async def verify(*args): world.calls.append("verify")
+        async def store(*args):
+            world.calls.append("archive")
+            if not world.notes:
+                world.note.transcription_state = "received"
+                world.notes.append(world.note)
+        async def transcribe(*args):
+            world.calls.append("transcribe"); world.provider += 1
+            world.note.transcription_state = "transcribed"
+        async def publish(factory, client, note, *, max_parts):
+            assert max_parts == 1
+            if note.delivery_state == "unknown": world.reconciles += 1
+            else: world.posts += 1
+            note.next_part += 1; note.delivery_state = "delivered"
+        worker = NS(ensure_cursor=ensure, store_entry=store, transcribe_note=transcribe,
+                    publish_note=publish, PATH="/Alpha/Voice")
+        ns = {"__name__":"offline_literal_drain", "Any":object,
+              "datetime":datetime,"UTC":UTC,"timedelta":timedelta,"PurePosixPath":PurePosixPath,
+              "WatchVoiceError":Error,"WatchVoiceNote":Note,"WatchVoiceCursor":Cursor,
+              "select":lambda target:Query(target),"update":lambda target:Query(target, True),
+              "or_":lambda *conditions:Expr(lambda row:any(c(row) for c in conditions)),
+              "ActionsInboxClient":Client,"bound_settings":bound,"claim_run":claim,
+              "worker":worker,"_refresh_access_token":refresh,"_verify_account_id":verify,
+              "_utc":lambda value:value,"httpx":NS(HTTPError=Error)}
+        worker_tree = ast.parse(Path(inputs.worker).read_text())
+        nodes = [ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0)]
+        nodes += [node for node in worker_tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                  and node.name in {"source_entry", "timestamp", "note_scope"}]
+        ns.update(PATH="/Alpha/Voice", SOURCE_LIMIT=25*1024*1024)
+        exec(compile(ast.fix_missing_locations(ast.Module(body=nodes, type_ignores=[])), "literal_worker", "exec"), ns)
+        worker.source_entry, worker.timestamp, worker.note_scope = ns["source_entry"], ns["timestamp"], ns["note_scope"]
+        tree = ast.parse(source)
+        selected = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and node.name in {"drain", "_process_queued_note", "publish_result", "result"}]
+        selected.insert(0, ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0))
+        exec(compile(ast.fix_missing_locations(ast.Module(body=selected, type_ignores=[])), "literal_actions", "exec"), ns)
+        return ns
+    async def run(self, source):
+        ns = self.namespace(source)
+        return await ns["drain"](settings=self.settings, factory=self.factory, http=self,
+                                 claims={"sha":"synthetic"}, job_token="synthetic")
+
+
+OLD = Path(inputs.before).read_text()
+NEW = Path(inputs.after).read_text()
+
+
+class QueueFirst(unittest.TestCase):
+    def run_case(self, world, source=NEW): return asyncio.run(world.run(source))
+    def test_old_reproduces_blocker(self):
+        world = World()
+        with self.assertRaisesRegex(Error, "watch_voice_source_size_limit"): self.run_case(world, OLD)
+        self.assertEqual((world.provider, world.posts), (0, 0))
+        self.assertIn("scan", world.calls)
+    def test_received_progress_before_scan(self):
+        world = World(); receipt = self.run_case(world)
+        self.assertEqual(receipt["delivered"], 1)
+        self.assertEqual((world.provider, world.posts), (1, 1))
+        self.assertNotIn("scan", world.calls); self.assertNotIn("refresh", world.calls)
+    def test_transcribed_progress_without_stt_or_scan(self):
+        world = World("transcribed"); self.run_case(world)
+        self.assertEqual((world.provider, world.posts), (0, 1)); self.assertNotIn("scan", world.calls)
+    def test_empty_queue_preserves_scan(self):
+        world = World(None); world.entry["size"] = 5
+        self.assertEqual(self.run_case(world)["delivered"], 1)
+        self.assertEqual(world.calls[-5:], ["refresh", "verify", "scan", "archive", "transcribe"])
+    def test_empty_queue_oversized_still_fails_closed(self):
+        with self.assertRaisesRegex(Error, "size_limit"): self.run_case(World(None))
+    def test_auth_before_queue(self):
+        world = World(); world.authorized = False
+        with self.assertRaisesRegex(Error, "auth"): self.run_case(world)
+        self.assertEqual((world.provider, world.posts), (0, 0))
+    def test_binding_before_queue(self):
+        world = World(); world.binding_ok = False
+        with self.assertRaisesRegex(Error, "binding"): self.run_case(world)
+        self.assertEqual((world.provider, world.posts), (0, 0))
+    def test_lock_before_queue(self):
+        world = World(); world.lock = False
+        self.assertEqual(self.run_case(world)["result"], "deferred")
+        self.assertEqual((world.provider, world.posts), (0, 0))
+    def test_future_queue_eligible(self):
+        world = World(scope="future-only"); self.run_case(world)
+        self.assertEqual((world.provider, world.posts), (1, 1))
+    def test_future_history_excluded(self):
+        world = World(scope="future-only"); world.note.dropbox_modified_at = world.cutover
+        with self.assertRaisesRegex(Error, "size_limit"): self.run_case(world)
+        self.assertEqual((world.provider, world.posts), (0, 0))
+    def test_future_cutover_initialization_excludes_existing_queue(self):
+        world = World(scope="future-only"); world.cursor.future_cutover_at = None
+        # Cutover initialization in drain is intentional; fake DB mirrors that write.
+        with self.assertRaisesRegex(Error, "size_limit"): self.run_case(world)
+        self.assertIsNotNone(world.cursor.future_cutover_at)
+        self.assertEqual((world.provider, world.posts), (0, 0))
+    def test_unknown_provider_no_retry(self):
+        world = World("unknown")
+        with self.assertRaisesRegex(Error, "size_limit"): self.run_case(world)
+        self.assertEqual(world.provider, 0)
+    def test_started_provider_no_retry(self):
+        world = World("processing")
+        with self.assertRaisesRegex(Error, "size_limit"): self.run_case(world)
+        self.assertEqual(world.provider, 0)
+    def test_stale_started_becomes_unknown_no_retry(self):
+        world = World("processing"); world.note.attempted_at -= timedelta(hours=2)
+        with self.assertRaisesRegex(Error, "size_limit"): self.run_case(world)
+        self.assertEqual(world.note.transcription_state, "unknown"); self.assertEqual(world.provider, 0)
+    def test_publication_unknown_reconciles_without_post(self):
+        world = World("transcribed"); world.note.delivery_state = "unknown"
+        receipt = self.run_case(world)
+        self.assertEqual((world.provider, world.posts, world.reconciles), (0, 0, 1))
+        self.assertEqual(receipt["reconciled"], 1)
+    def test_run_replay_no_repeat(self):
+        world = World(); self.run_case(world)
+        self.assertEqual(self.run_case(world)["result"], "replayed")
+        self.assertEqual((world.provider, world.posts), (1, 1))
+    def test_restart_delivered_no_retranscription(self):
+        world = World(); self.run_case(world); world.claimed = False
+        with self.assertRaisesRegex(Error, "size_limit"): self.run_case(world)
+        self.assertEqual((world.provider, world.posts), (1, 1))
+
+
+if __name__ == "__main__": unittest.main(argv=[__file__, *unittest_args], verbosity=2)

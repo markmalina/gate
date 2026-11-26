@@ -8,6 +8,7 @@ from typing import Any
 
 from app.api.mcp_schemas import GATE_STATUS_OUTPUT_SCHEMA
 from app.infrastructure.dropbox_call_status import (
+    _safe_error,
     _timestamp,
     dropbox_call_operational_status,
 )
@@ -52,7 +53,7 @@ class ReadSession:
         ), row)
 
 
-def inspect(session: ReadSession, **overrides: Any) -> dict[str, Any]:
+def inspect(session: ReadSession, **overrides: Any) -> tuple[dict[str, Any], dict[str, int]]:
     arguments: dict[str, Any] = {
         "workspace_key": "owner", "configured_workspace": "owner",
         "account_id": "configured", "project_ids": frozenset({"allowed"}),
@@ -73,7 +74,7 @@ def test_status_fences_owner_project_and_source_account_without_payload() -> Non
         "INSERT INTO dropbox_call_inbox_states VALUES "
         "('configured','private-cursor',1,1,7,NULL,'dropbox_call_oauth_rejected',NULL,NULL)"
     ))
-    snapshot = inspect(session)
+    snapshot, reasons = inspect(session)
     assert [row["recording_id"] for row in snapshot["recent_recordings"]] == ["visible"]
     assert snapshot["inbox"]["last_error_code"] == "dropbox_call_oauth_rejected"
     assert snapshot["inbox"]["attempt_count"] == 7
@@ -91,6 +92,7 @@ def test_status_fences_owner_project_and_source_account_without_payload() -> Non
         "total": 1, "completed": 0, "superseded": 0, "incomplete": 1,
     }
     assert snapshot["incomplete_recordings"][0]["recording_id"] == "visible"
+    assert reasons == {"unclassified_error": 1}
     validate(snapshot, GATE_STATUS_OUTPUT_SCHEMA["properties"]["dropbox_calls"])
     session.connection.close()
 
@@ -101,11 +103,12 @@ def test_unauthorized_scopes_do_not_even_read_account_global_state() -> None:
         {"workspace_key": "other"}, {"project_ids": frozenset()},
         {"intake_project_allowed": False},
     ):
-        snapshot = inspect(session, **override)
+        snapshot, reasons = inspect(session, **override)
         assert snapshot["scope_allowed"] is False
         assert snapshot["configuration"] == {}
         assert snapshot["inbox"] is None
         assert snapshot["recent_recordings"] == []
+        assert reasons == {}
         validate(snapshot, GATE_STATUS_OUTPUT_SCHEMA["properties"]["dropbox_calls"])
     assert session.reads == []
     session.connection.close()
@@ -113,16 +116,59 @@ def test_unauthorized_scopes_do_not_even_read_account_global_state() -> None:
 
 def test_status_is_bounded_and_missing_account_never_scans_all_accounts() -> None:
     session = ReadSession()
-    assert inspect(session, account_id="")["inbox"] is None
+    empty, reasons = inspect(session, account_id="")
+    assert empty["inbox"] is None
+    assert reasons == {}
     assert session.reads == []
     for number in range(25):
         session.recording(f"record-{number:02}")
-    snapshot = inspect(session)
+    snapshot, reasons = inspect(session)
     assert len(snapshot["recent_recordings"]) == 20
+    assert reasons == {"unclassified_error": 25}
     assert snapshot["recent_recordings"][0]["recording_id"] == "record-24"
     assert snapshot["recent_recordings"][-1]["recording_id"] == "record-05"
     assert snapshot["provider_calls"] == 0
     assert snapshot["mutation_allowed"] is False
+    session.connection.close()
+
+
+def test_incomplete_reason_totals_cover_records_beyond_the_sample() -> None:
+    session = ReadSession()
+    for number in range(101):
+        session.recording(
+            f"quota-{number:03}", transcription_status="rejected",
+            transcription_reason_code="openai_transcription_quota_unavailable",
+        )
+    session.recording("missing", transcription_status="rejected", transcription_reason_code=None)
+    session.recording("unset", transcription_reason_code="")
+    session.recording("unclassified", transcription_reason_code="unexpected-private-error")
+    session.recording(
+        "silence", transcription_status="rejected",
+        transcription_reason_code="telegram_voice_no_speech",
+    )
+    session.recording("foreign", project_id="foreign")
+    session.recording("done", transcription_status="transcribed")
+    session.recording(
+        "superseded", transcription_status="rejected",
+        transcription_reason_code="dropbox_call_revision_superseded",
+    )
+
+    snapshot, reasons = inspect(session)
+    assert snapshot["archive_counts"] == {
+        "total": 107, "completed": 1, "superseded": 1, "incomplete": 105,
+    }
+    assert reasons == {
+        "openai_transcription_quota_unavailable": 101, "telegram_voice_no_speech": 1,
+        "unclassified_error": 1, "unspecified": 2,
+    }
+    assert snapshot["requires_attention_count"] == 104
+    assert snapshot["no_speech_count"] == 1
+    assert snapshot["incomplete_truncated"] is True
+    assert len(snapshot["incomplete_recordings"]) == 100
+    assert snapshot["incomplete_recordings"][0]["recording_id"] == "missing"
+    assert "unexpected-private-error" not in json.dumps(snapshot)
+    assert len(session.reads) == 4
+    validate(snapshot, GATE_STATUS_OUTPUT_SCHEMA["properties"]["dropbox_calls"])
     session.connection.close()
 
 
@@ -138,12 +184,13 @@ def test_superseded_partial_revision_does_not_require_attention() -> None:
         transcription_reason_code="telegram_voice_transcribed",
         transcript_text="private transcript", source_revision="final",
     )
-    snapshot = inspect(session)
+    snapshot, reasons = inspect(session)
     assert snapshot["archive_counts"] == {
         "total": 2, "completed": 1, "superseded": 1, "incomplete": 0,
     }
     assert snapshot["requires_attention_count"] == 0
     assert snapshot["incomplete_recordings"] == []
+    assert reasons == {}
     partial = next(row for row in snapshot["recent_recordings"]
                    if row["recording_id"] == "partial")
     assert partial["transcription_reason_code"] == "dropbox_call_revision_superseded"
@@ -155,3 +202,13 @@ def test_timestamp_serialization_preserves_actual_observation() -> None:
     observed = datetime(2026, 9, 21, 8, 0, tzinfo=UTC)
     assert _timestamp(observed) == "2026-09-21T08:00:00+00:00"
     assert _timestamp(None) is None
+
+
+def test_recognized_provider_refusals_are_visible_but_arbitrary_text_is_redacted() -> None:
+    for reason in (
+        "openai_transcription_workload_identity_unavailable",
+        "openai_transcription_quota_unavailable",
+        "openai_transcription_rate_limited",
+    ):
+        assert _safe_error(reason) == reason
+        assert _safe_error(reason + ": untrusted detail") == "unclassified_error"

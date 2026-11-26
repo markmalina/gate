@@ -126,7 +126,7 @@ async def test_invalid_or_changed_snapshot_fails_before_any_provider_io(case: st
                 update(ReplyDraft)
                 .where(ReplyDraft.id == seed.draft_ids[0])
                 .values(
-                    prompt_context={FORMAT_KEY: snapshot},
+                    prompt_context={"dialog_snapshot": seed.context_snapshot, FORMAT_KEY: snapshot},
                     draft_text="Подменённый текст" if case == "text" else preview.text,
                 )
             )
@@ -160,7 +160,9 @@ async def test_new_valid_snapshot_cannot_relabel_already_sent_attempt() -> None:
                 update(ReplyDraft)
                 .where(ReplyDraft.id == seed.draft_ids[0])
                 .values(
-                    prompt_context={FORMAT_KEY: original.to_dict()},
+                    prompt_context={
+                        "dialog_snapshot": seed.context_snapshot, FORMAT_KEY: original.to_dict(),
+                    },
                 )
             )
             await session.commit()
@@ -179,7 +181,9 @@ async def test_new_valid_snapshot_cannot_relabel_already_sent_attempt() -> None:
                 update(ReplyDraft)
                 .where(ReplyDraft.id == seed.draft_ids[0])
                 .values(
-                    prompt_context={FORMAT_KEY: replacement.to_dict()},
+                    prompt_context={
+                        "dialog_snapshot": seed.context_snapshot, FORMAT_KEY: replacement.to_dict(),
+                    },
                 )
             )
             await session.commit()

@@ -61,6 +61,7 @@ class SaveReplyDraftCommand:
     text_format: str | None = None
     formatting: FormattingPreview | None = None
     rich_content: dict[str, Any] | None = None
+    expected_context_snapshot: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,5 +145,6 @@ class SaveReplyDraftService:
                 text_format=command.text_format,
                 rich_content=command.rich_content,
                 formatting=preview,
+                expected_context_snapshot=command.expected_context_snapshot,
             )
         )

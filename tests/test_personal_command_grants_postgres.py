@@ -78,6 +78,7 @@ async def test_postgres_require_transaction_orders_before_revoke(pg_grants):
         # Read actual PostgreSQL lock wait; timing-only assertions cannot prove ordering.
         async with pg_grants.sessions() as observer:
             for _ in range(100):
+                await observer.execute(text("SELECT pg_stat_clear_snapshot()"))
                 waiting = await observer.scalar(
                     text(
                         "SELECT count(*) FROM pg_stat_activity "
@@ -111,6 +112,7 @@ async def test_postgres_revoke_transaction_orders_before_require(pg_grants):
         task = asyncio.create_task(require(pg_grants))
         async with pg_grants.sessions() as observer:
             for _ in range(100):
+                await observer.execute(text("SELECT pg_stat_clear_snapshot()"))
                 waiting = await observer.scalar(
                     text(
                         "SELECT count(*) FROM pg_stat_activity "

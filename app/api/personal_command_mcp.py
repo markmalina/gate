@@ -1,4 +1,4 @@
-"""Default-off personal command MCP contract; no provider or startup wiring."""
+"""Default-off, provider-free personal command MCP contract."""
 
 from __future__ import annotations
 
@@ -117,6 +117,7 @@ def personal_command_tools(settings: Settings) -> list[JsonObject]:
                     "additionalProperties": False,
                 },
                 "outputSchema": {
+                    "type": "object",
                     "oneOf": [
                         READINESS_SCHEMA if action == "readiness" else OPERATION_SCHEMA,
                         ERROR_SCHEMA,
@@ -155,15 +156,7 @@ async def personal_command_call(
             authorization=authorization, settings=settings, required_scope=required_scope
         )
     except McpOAuthError as exc:
-        response = _error(request_id, exc.error)
-        origin = settings.mcp_public_resource_url.rstrip("/").removesuffix("/mcp")
-        response["result"]["_meta"] = {
-            "mcp/www_authenticate": [
-                f'Bearer resource_metadata="{origin}/.well-known/oauth-protected-resource/mcp", '
-                f'scope="{required_scope}", error="{exc.error}"'
-            ]
-        }
-        return response
+        return personal_oauth_error(request_id, exc.error, required_scope, settings)
     action = tool_name.removeprefix("gate_personal_command_")
     if not _valid_arguments(action, arguments):
         return _error(request_id, "invalid_arguments")
@@ -211,6 +204,18 @@ def _valid_arguments(action: str, arguments: Any) -> bool:
         and re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", arguments["request_key"]) is not None
         and 1 <= len(arguments["text"]) <= 4096
     )
+
+
+def personal_oauth_error(request_id: Any, code: str, scope: str, settings: Settings) -> JsonObject:
+    response = _error(request_id, code)
+    origin = settings.mcp_public_resource_url.rstrip("/").removesuffix("/mcp")
+    response["result"]["_meta"] = {
+        "mcp/www_authenticate": [
+            f'Bearer resource_metadata="{origin}/.well-known/oauth-protected-resource/mcp", '
+            f'scope="{scope}", error="{code}"'
+        ]
+    }
+    return response
 
 
 def _error(request_id: Any, code: str) -> JsonObject:

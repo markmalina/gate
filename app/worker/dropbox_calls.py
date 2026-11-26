@@ -14,50 +14,55 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 import httpx
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import aliased
 
 from app.application.audio_summary import AUDIO_SUMMARY_MODEL, build_audio_summary
 from app.application.telegram_voice_transcription import (
     MAX_SOURCE_AUDIO_BYTES,
-    DownloadedVoice,
     TelegramVoiceOutcome,
     TelegramVoiceReference,
     TelegramVoiceTranscriptionService,
     TranscribeTelegramVoiceCommand,
 )
 from app.core.config import DROPBOX_CALL_INBOX_PATH, Settings
+from app.infrastructure.audio_duration import (
+    MAX_DECODED_AUDIO_SECONDS,
+    container_duration_seconds,
+    decoded_duration_microseconds,
+    start_duration_decode,
+    start_duration_probe,
+)
 from app.infrastructure.billing_budget import SqlBillingBudgetService
 from app.infrastructure.openai_transcription import (
     OpenAITranscriptionClient,
     OpenAITranscriptionConfig,
 )
-from app.infrastructure.owner_voice_recovery import (
-    claim_owner_voice_recovery,
-    owner_voice_reservation_key,
-    reconcile_exact_call_copies,
-)
+from app.infrastructure.owner_voice_recovery import reconcile_exact_call_copies
 from app.infrastructure.telegram_voice import TelegramVoiceNormalizer
 from app.models.billing import BillingBudgetReservationModel
 from app.models.domain import (
     UNCLASSIFIED_PROJECT_ID,
     DropboxCallInboxState,
+    DropboxCallIntakeRejection,
     PhoneCallRecording,
-    TelegramOutboxEvent,
-    TelegramOutboxStatus,
-    TelegramReceipt,
-    TelegramReceiptStatus,
     TelegramVoiceArchive,
 )
+from app.worker.stored_audio import (
+    STORED_VOICE_BUDGET_CONNECTOR_REF,
+    STORED_VOICE_BUDGET_SCOPE_KIND,
+    StoredVoiceDownloader,
+    store_no_speech_summary,
+)
+from app.worker.telegram_voice_recovery import recover_authorized_telegram_voice
 
 logger = logging.getLogger(__name__)
 
 _DROPBOX_API = "https://api.dropboxapi.com/2"
 _DROPBOX_CONTENT_API = "https://content.dropboxapi.com/2"
 DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES = MAX_SOURCE_AUDIO_BYTES
-# Reuse the existing hard-limited Gate voice budget until billing scopes are generalized.
-_CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND = "telegram_connector"
-_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF = "telegram_business"
 _LONG_CALL_RECOVERY_STATUS = "recovery_v13"
 _LONG_CALL_RECOVERY_MODEL = "gpt-4o-transcribe"
 _CHUNK_REPAIR_RECOVERY_STATUS = "recovery_v14"
@@ -106,56 +111,101 @@ class DropboxCallWorkerError(RuntimeError):
         super().__init__(code)
 
 
-class _StoredCallDownloader:
-    def __init__(
-        self,
-        recording: PhoneCallRecording | TelegramVoiceArchive,
-    ) -> None:
-        self._recording = recording
-
-    async def download(self, _reference: TelegramVoiceReference) -> DownloadedVoice:
-        return DownloadedVoice(
-            data=self._recording.data,
-            filename=self._recording.filename,
-            media_type=self._recording.media_type,
-        )
-
-
 async def run_dropbox_call_worker_loop(
     *,
     settings: Settings,
     session_factory: async_sessionmaker[AsyncSession],
+    intake_wake: asyncio.Event,
 ) -> None:
-    """Poll Dropbox as webhook recovery and drain its durable delta cursor."""
+    """Run independent intake and transcription queues for Dropbox calls."""
 
     if not settings.gate_dropbox_call_intake_enabled:
         return
     _validate_settings(settings)
+    transcription_wake = asyncio.Event()
     async with httpx.AsyncClient(timeout=60.0) as http:
-        while True:
+        async with asyncio.TaskGroup() as tasks:
+            tasks.create_task(_run_intake_loop(
+                settings, session_factory, http, intake_wake, transcription_wake,
+            ))
+            tasks.create_task(_run_transcription_loop(
+                settings, session_factory, http, transcription_wake,
+            ))
+
+
+async def _wait_for_wake(event: asyncio.Event, recovery_seconds: float) -> None:
+    try:
+        await asyncio.wait_for(event.wait(), timeout=recovery_seconds)
+    except TimeoutError:
+        pass
+
+
+async def _run_intake_loop(
+    settings: Settings,
+    session_factory: async_sessionmaker[AsyncSession],
+    http: httpx.AsyncClient,
+    wake: asyncio.Event,
+    transcription_wake: asyncio.Event,
+) -> None:
+    while True:
+        wake.clear()
+        try:
+            async with session_factory() as lock:
+                # Serialize current cursor writers without blocking the webhook.
+                acquired = await lock.scalar(select(func.pg_try_advisory_xact_lock(
+                    func.hashtext("gate-dropbox-calls"),
+                    func.hashtext(settings.dropbox_call_account_id),
+                )))
+                if acquired:
+                    try:
+                        await process_dropbox_call_changes(
+                            settings=settings,
+                            session_factory=session_factory,
+                            http=http,
+                            transcription_wake=transcription_wake,
+                        )
+                    except Exception as exc:
+                        code = exc.code if isinstance(exc, DropboxCallWorkerError) else (
+                            "dropbox_call_worker_failed"
+                        )
+                        await _mark_retry(
+                            settings=settings, session_factory=session_factory, code=code,
+                        )
+                        logger.warning("Dropbox call intake deferred: code=%s", code)
+        except Exception:
+            logger.warning("Dropbox call intake state unavailable")
+        await _wait_for_wake(wake, settings.gate_dropbox_call_poll_seconds)
+
+
+async def _run_transcription_loop(
+    settings: Settings,
+    session_factory: async_sessionmaker[AsyncSession],
+    http: httpx.AsyncClient,
+    wake: asyncio.Event,
+) -> None:
+    while True:
+        wake.clear()
+        if settings.openai_api_key.get_secret_value():
             try:
-                await process_dropbox_call_changes(
-                    settings=settings,
-                    session_factory=session_factory,
-                    http=http,
+                await recover_authorized_telegram_voice(
+                    settings=settings, session_factory=session_factory, http=http,
                 )
-            except asyncio.CancelledError:
-                raise
-            except DropboxCallWorkerError as exc:
-                await _mark_retry(
-                    settings=settings,
-                    session_factory=session_factory,
-                    code=exc.code,
+                await _recover_duration_unknown_recordings(
+                    settings=settings, session_factory=session_factory,
                 )
-                logger.warning("Dropbox call intake deferred: code=%s", exc.code)
+                await _resume_received_recordings(
+                    settings=settings, session_factory=session_factory, http=http,
+                )
+                await _summarize_ready_audio(session_factory=session_factory)
+                await _mark_superseded_revisions(
+                    settings=settings, session_factory=session_factory,
+                )
+                await reconcile_exact_call_copies(
+                    session_factory, workspace_key=settings.gate_workspace_id,
+                )
             except Exception:
-                await _mark_retry(
-                    settings=settings,
-                    session_factory=session_factory,
-                    code="dropbox_call_worker_failed",
-                )
-                logger.exception("Dropbox call intake failed")
-            await asyncio.sleep(settings.gate_dropbox_call_poll_seconds)
+                logger.warning("Dropbox call transcription queue deferred")
+        await _wait_for_wake(wake, settings.gate_dropbox_call_poll_seconds)
 
 
 async def process_dropbox_call_changes(
@@ -163,6 +213,7 @@ async def process_dropbox_call_changes(
     settings: Settings,
     session_factory: async_sessionmaker[AsyncSession],
     http: httpx.AsyncClient,
+    transcription_wake: asyncio.Event,
 ) -> None:
     """Fetch and commit all currently visible deltas before advancing the cursor."""
 
@@ -173,26 +224,6 @@ async def process_dropbox_call_changes(
 
     access_token = await _refresh_access_token(settings, http)
     await _verify_account_id(settings, http, access_token)
-    await _recover_authorized_telegram_voices(
-        settings=settings,
-        session_factory=session_factory,
-        http=http,
-    )
-    await _recover_duration_unknown_recordings(
-        settings=settings, session_factory=session_factory,
-    )
-    await _resume_received_recordings(
-        settings=settings,
-        session_factory=session_factory,
-        http=http,
-    )
-    await _summarize_ready_audio(session_factory=session_factory)
-    await _mark_superseded_revisions(
-        settings=settings, session_factory=session_factory,
-    )
-    await reconcile_exact_call_copies(
-        session_factory, workspace_key=settings.gate_workspace_id,
-    )
     cursor = None if state.backfill_version < _CALL_BACKFILL_VERSION else state.cursor
     while True:
         payload = await _list_changes(
@@ -211,31 +242,25 @@ async def process_dropbox_call_changes(
         ):
             raise DropboxCallWorkerError("dropbox_call_delta_invalid")
         for entry in entries:
-            if _is_oversize_audio_file(entry):
-                # The old bounded-file filter remains strict; this separate
-                # rejection prevents an oversized supported source from being
-                # silently skipped when the delta cursor advances.
-                raise DropboxCallWorkerError("dropbox_call_download_limit_exceeded")
-            if _is_supported_file(entry):
-                await _ingest_entry(
+            if _is_supported_file(entry) or _is_oversize_audio_file(entry):
+                queued = await _ingest_entry(
                     settings=settings,
                     session_factory=session_factory,
                     http=http,
                     access_token=access_token,
                     entry=entry,
                 )
+                if queued:
+                    transcription_wake.set()
         cursor = next_cursor
         await _commit_cursor(
             settings=settings,
             session_factory=session_factory,
             cursor=cursor,
             pending=has_more,
+            webhook_received_at=state.webhook_received_at,
         )
         if not has_more:
-            await _summarize_ready_audio(session_factory=session_factory)
-            await _mark_superseded_revisions(
-                settings=settings, session_factory=session_factory,
-            )
             return
 
 
@@ -250,8 +275,6 @@ def _validate_settings(settings: Settings) -> None:
         raise DropboxCallWorkerError("dropbox_call_refresh_token_missing")
     if not settings.dropbox_call_account_id:
         raise DropboxCallWorkerError("dropbox_call_account_id_missing")
-    if not settings.openai_api_key.get_secret_value():
-        raise DropboxCallWorkerError("dropbox_call_openai_key_missing")
 
 
 async def _load_or_create_state(
@@ -264,10 +287,15 @@ async def _load_or_create_state(
             settings.dropbox_call_account_id,
         )
         if state is None:
-            state = DropboxCallInboxState(account_id=settings.dropbox_call_account_id)
-            session.add(state)
+            await session.execute(
+                insert(DropboxCallInboxState)
+                .values(account_id=settings.dropbox_call_account_id)
+                .on_conflict_do_nothing()
+            )
             await session.commit()
-            await session.refresh(state)
+            state = await session.get(DropboxCallInboxState, settings.dropbox_call_account_id)
+            if state is None:
+                raise DropboxCallWorkerError("dropbox_call_state_missing")
         return state
 
 
@@ -401,7 +429,7 @@ async def _ingest_entry(
     http: httpx.AsyncClient,
     access_token: str,
     entry: dict[str, Any],
-) -> None:
+) -> bool:
     file_id = _required_string(entry, "id", "dropbox_call_file_id_invalid")
     revision = _required_string(entry, "rev", "dropbox_call_revision_invalid")
     name = _required_string(entry, "name", "dropbox_call_filename_invalid", maximum=255)
@@ -416,10 +444,13 @@ async def _ingest_entry(
     size = entry.get("size")
     if not isinstance(size, int) or size <= 0:
         raise DropboxCallWorkerError("dropbox_call_size_invalid")
+    source_key = hashlib.sha256(f"{file_id}\n{revision}".encode()).hexdigest()
+    rejection_key = (settings.gate_workspace_id, settings.dropbox_call_account_id, source_key)
     if size > DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES:
-        # Keep the delta cursor before this entry; the owner sees the precise
-        # reason in intake status instead of silently losing this revision.
-        raise DropboxCallWorkerError("dropbox_call_download_limit_exceeded")
+        await _record_intake_rejection(
+            session_factory, rejection_key, "dropbox_call_download_limit_exceeded",
+        )
+        return False
 
     async with session_factory() as session:
         duplicate = await session.scalar(
@@ -430,64 +461,71 @@ async def _ingest_entry(
                 PhoneCallRecording.source_revision == revision,
             )
         )
-    if duplicate is not None:
-        return
+        if duplicate is not None or (
+            await session.get(DropboxCallIntakeRejection, rejection_key)
+        ) is not None:
+            return False
 
-    data, media_type = await _download_revision(
-        http=http,
-        access_token=access_token,
-        revision=revision,
-        expected_size=size,
-        fallback_name=name,
-    )
-    duration_seconds = await _probe_duration_seconds(data)
-    now = datetime.now(UTC)
-    recording = PhoneCallRecording(
-        workspace_key=settings.gate_workspace_id,
-        project_id=UNCLASSIFIED_PROJECT_ID,
-        source_account_id=settings.dropbox_call_account_id,
-        source_file_id=file_id,
-        source_revision=revision,
-        source_path=path,
-        filename=name,
-        media_type=media_type,
-        size_bytes=len(data),
-        sha256=hashlib.sha256(data).hexdigest(),
-        data=data,
-        duration_seconds=duration_seconds,
-        received_at=now,
-    )
-    if duration_seconds is None:
-        recording.transcription_status = TelegramVoiceOutcome.REJECTED.value
-        recording.transcription_reason_code = "dropbox_call_duration_unknown"
-        recording.transcript_language = "ru"
-        recording.transcription_model = settings.gate_telegram_voice_transcription_model
-        recording.transcribed_at = now
-        async with session_factory() as session:
-            session.add(recording)
-            await session.commit()
-        return
-    if duration_seconds > _MAX_CALL_DURATION_SECONDS:
-        recording.transcription_status = TelegramVoiceOutcome.REJECTED.value
-        recording.transcription_reason_code = "dropbox_call_duration_exceeded"
-        recording.transcript_language = "ru"
-        recording.transcribed_at = now
-        async with session_factory() as session:
-            session.add(recording)
-            await session.commit()
-        return
+    try:
+        data, media_type = await _download_revision(
+            http=http, access_token=access_token, revision=revision,
+            expected_size=size, fallback_name=name,
+        )
+    except DropboxCallWorkerError as exc:
+        if exc.code not in {
+            "dropbox_call_download_limit_exceeded", "dropbox_call_download_size_mismatch",
+        }:
+            raise
+        await _record_intake_rejection(session_factory, rejection_key, exc.code)
+        return False
 
+    queued_at = datetime.now(UTC)
     async with session_factory() as session:
-        session.add(recording)
+        recording_id = await session.scalar(
+            insert(PhoneCallRecording)
+            .values(
+                workspace_key=settings.gate_workspace_id,
+                project_id=UNCLASSIFIED_PROJECT_ID,
+                source_account_id=settings.dropbox_call_account_id,
+                source_file_id=file_id,
+                source_revision=revision,
+                source_path=path,
+                filename=name,
+                media_type=media_type,
+                size_bytes=len(data),
+                sha256=hashlib.sha256(data).hexdigest(),
+                data=data,
+                received_at=queued_at,
+                transcription_queued_at=queued_at,
+            )
+            .on_conflict_do_nothing(constraint="uq_phone_call_recordings_source_revision")
+            .returning(PhoneCallRecording.id)
+        )
         await session.commit()
-        await session.refresh(recording)
+    return recording_id is not None
 
-    await _transcribe_recording(
-        settings=settings,
-        session_factory=session_factory,
-        http=http,
-        recording=recording,
-    )
+
+async def _record_intake_rejection(
+    session_factory: async_sessionmaker[AsyncSession],
+    rejection_key: tuple[str, str, str],
+    code: str,
+) -> None:
+    workspace, account_id, source_key = rejection_key
+    async with session_factory() as session:
+        inserted = await session.scalar(
+            insert(DropboxCallIntakeRejection)
+            .values(
+                workspace_key=workspace,
+                account_id=account_id,
+                source_revision_sha256=source_key,
+                reason_code=code,
+            )
+            .on_conflict_do_nothing()
+            .returning(DropboxCallIntakeRejection.reason_code)
+        )
+        await session.commit()
+    if inserted is not None:
+        logger.warning("Dropbox call source rejected: code=%s", inserted)
 
 
 async def _recover_duration_unknown_recordings(
@@ -562,6 +600,7 @@ async def _recover_duration_unknown_recordings(
                 row.transcription_status = "received"
                 row.transcription_reason_code = "dropbox_call_duration_recovered"
                 row.transcribed_at = None
+                row.reset_processing_attempt(queued_at=datetime.now(UTC))
             await session.commit()
 
 
@@ -572,55 +611,47 @@ async def _mark_superseded_revisions(
 ) -> None:
     """Close unreadable partial uploads only after the same file has a later transcript."""
 
-    async with session_factory() as session:
-        candidates = list((await session.scalars(
-            select(PhoneCallRecording.id)
-            .where(
-                PhoneCallRecording.workspace_key == settings.gate_workspace_id,
-                PhoneCallRecording.source_account_id == settings.dropbox_call_account_id,
-                PhoneCallRecording.transcription_status == "rejected",
-                PhoneCallRecording.transcription_reason_code
-                == "dropbox_call_media_unreadable",
-                PhoneCallRecording.transcript_text.is_(None),
-            )
-            .order_by(PhoneCallRecording.received_at.asc()).limit(20)
-        )).all())
-    for candidate_id in candidates:
-        async with session_factory() as session:
-            row = await session.scalar(
-                select(PhoneCallRecording)
-                .where(PhoneCallRecording.id == candidate_id)
-                .with_for_update(skip_locked=True)
-            )
-            if (
-                row is None or row.workspace_key != settings.gate_workspace_id
-                or row.source_account_id != settings.dropbox_call_account_id
-                or row.transcription_status != "rejected"
-                or row.transcription_reason_code != "dropbox_call_media_unreadable"
-                or row.transcript_text is not None
-            ):
-                continue
-            successor_id = await session.scalar(
-                select(PhoneCallRecording.id)
-                .where(
-                    PhoneCallRecording.workspace_key == row.workspace_key,
-                    PhoneCallRecording.project_id == row.project_id,
-                    PhoneCallRecording.source_account_id == row.source_account_id,
-                    PhoneCallRecording.source_file_id == row.source_file_id,
-                    PhoneCallRecording.source_revision != row.source_revision,
-                    PhoneCallRecording.source_path == row.source_path,
-                    PhoneCallRecording.filename == row.filename,
-                    PhoneCallRecording.received_at > row.received_at,
-                    PhoneCallRecording.size_bytes > row.size_bytes,
-                    PhoneCallRecording.transcription_status == "transcribed",
-                    PhoneCallRecording.transcript_text.is_not(None),
-                )
-                .order_by(PhoneCallRecording.received_at.desc()).limit(1)
-            )
-            if successor_id is None:
-                continue
-            row.transcription_reason_code = "dropbox_call_revision_superseded"
-            await session.commit()
+    partial = aliased(PhoneCallRecording)
+    final = aliased(PhoneCallRecording)
+    has_final_transcript = (
+        select(final.id)
+        .where(
+            final.workspace_key == partial.workspace_key,
+            final.project_id == partial.project_id,
+            final.source_account_id == partial.source_account_id,
+            final.source_file_id == partial.source_file_id,
+            final.source_revision != partial.source_revision,
+            final.source_path == partial.source_path,
+            final.filename == partial.filename,
+            final.received_at > partial.received_at,
+            final.size_bytes > partial.size_bytes,
+            final.transcription_status == "transcribed",
+            final.transcript_text.is_not(None),
+        )
+        .correlate(partial)
+        .exists()
+    )
+    candidates = (
+        select(partial.id)
+        .where(
+            partial.workspace_key == settings.gate_workspace_id,
+            partial.source_account_id == settings.dropbox_call_account_id,
+            partial.transcription_status == "rejected",
+            partial.transcription_reason_code == "dropbox_call_media_unreadable",
+            partial.transcript_text.is_(None),
+            has_final_transcript,
+        )
+        .order_by(partial.received_at, partial.id)
+        .limit(20)
+        .with_for_update(of=partial, skip_locked=True)
+    )
+    async with session_factory.begin() as session:
+        await session.execute(
+            update(PhoneCallRecording)
+            .where(PhoneCallRecording.id.in_(candidates))
+            .values(transcription_reason_code="dropbox_call_revision_superseded")
+            .execution_options(synchronize_session=False)
+        )
 
 
 async def _resume_received_recordings(
@@ -705,6 +736,23 @@ async def _transcribe_recording(
         )
         if claimed is None:
             return
+        if claimed.transcription_status == "processing":
+            prior_reservation = await session.scalar(
+                select(BillingBudgetReservationModel.id)
+                .where(BillingBudgetReservationModel.reservation_key.like(
+                    f"dropbox-call-%:{claimed.id}"
+                ))
+                .limit(1)
+            )
+            if prior_reservation is not None:
+                claimed.transcription_status = TelegramVoiceOutcome.UNKNOWN.value
+                claimed.transcription_reason_code = "dropbox_call_interrupted_after_reservation"
+                if claimed.transcription_stopped_at is None:
+                    claimed.record_processing_result(
+                        claimed_at, reason=claimed.transcription_reason_code,
+                    )
+                await session.commit()
+                return
         transcription_model = (
             _LONG_CALL_RECOVERY_MODEL
             if claimed.transcription_status == _LONG_CALL_RECOVERY_STATUS
@@ -719,6 +767,10 @@ async def _transcribe_recording(
             or claimed.transcription_reason_code == _EMPTY_RESULT_PROCESSING
         )
         duration_recovery = claimed.transcription_reason_code == "dropbox_call_duration_recovered"
+        if claimed.transcription_status not in {"received", "processing"}:
+            claimed.reset_processing_attempt(queued_at=None)
+        elif claimed.transcription_status == "processing":
+            claimed.reset_processing_attempt(queued_at=claimed.transcription_queued_at)
         claimed.transcription_status = "processing"
         if empty_result_recovery:
             claimed.transcription_reason_code = _EMPTY_RESULT_PROCESSING
@@ -731,15 +783,54 @@ async def _transcribe_recording(
         await session.refresh(claimed)
         recording = claimed
 
+    current_claim = (
+        PhoneCallRecording.id == recording.id,
+        PhoneCallRecording.transcription_status == "processing",
+        PhoneCallRecording.transcribed_at == recording.transcribed_at,
+    )
+
     duration_seconds = recording.duration_seconds
     if duration_seconds is None:
-        raise DropboxCallWorkerError("dropbox_call_duration_unknown")
+        duration_seconds = await _probe_duration_seconds(recording.data)
+        reason = None
+        if duration_seconds is None:
+            reason = "dropbox_call_duration_unknown"
+        elif duration_seconds > _MAX_CALL_DURATION_SECONDS:
+            reason = "dropbox_call_duration_exceeded"
+        async with session_factory() as session:
+            stored = await session.scalar(
+                select(PhoneCallRecording).where(*current_claim).with_for_update()
+            )
+            if stored is None:
+                return
+            stored.duration_seconds = duration_seconds
+            if reason:
+                stored.transcription_status = TelegramVoiceOutcome.REJECTED.value
+                stored.transcript_language = "ru"
+                stored.transcription_reason_code = reason
+                stored.transcribed_at = datetime.now(UTC)
+                stored.record_processing_result(stored.transcribed_at, reason=reason)
+            await session.commit()
+        if duration_seconds is None or reason:
+            return
     occurred_at = (
         claimed_at if chunk_recovery or empty_result_recovery or duration_recovery
         else recording.received_at
     )
+
+    async def mark_recognition_started(at: datetime) -> None:
+        async with session_factory.begin() as session:
+            started = await session.scalar(
+                update(PhoneCallRecording)
+                .where(*current_claim, PhoneCallRecording.recognition_started_at.is_(None))
+                .values(recognition_started_at=at)
+                .returning(PhoneCallRecording.id)
+            )
+            if started is None:
+                raise DropboxCallWorkerError("dropbox_call_recognition_claim_lost")
+
     service = TelegramVoiceTranscriptionService(
-        downloader=_StoredCallDownloader(recording),
+        downloader=StoredVoiceDownloader(recording),
         normalizer=TelegramVoiceNormalizer(),
         budget=SqlBillingBudgetService(session_factory),
         speech_to_text=OpenAITranscriptionClient(
@@ -753,44 +844,65 @@ async def _transcribe_recording(
         ),
         download_limit_bytes=DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES,
     )
-    result = await service.transcribe(
-        TranscribeTelegramVoiceCommand(
-            voice=TelegramVoiceReference(
-                file_id=recording.source_file_id,
-                file_unique_id=recording.source_revision,
-                declared_size_bytes=recording.size_bytes,
-                duration_seconds=duration_seconds,
-            ),
-            workspace_key=settings.gate_workspace_id,
-            connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
-            reservation_key=(
-                f"dropbox-call-v15:{recording.id}" if empty_result_recovery else (
-                    f"dropbox-call-v14:{recording.id}"
-                    if chunk_recovery else f"dropbox-call-v13:{recording.id}"
-                )
-            ),
-            period_key=occurred_at.strftime("%Y-%m"),
-            requested_microusd=max(
-                100,
-                duration_seconds
-                * settings.gate_telegram_voice_reserve_microusd_per_second,
-            ),
-            occurred_at=occurred_at,
-            language="ru",
-            enabled=True,
-            budget_scope_kind=_CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND,
-        )
+    command = TranscribeTelegramVoiceCommand(
+        voice=TelegramVoiceReference(
+            file_id=recording.source_file_id,
+            file_unique_id=recording.source_revision,
+            declared_size_bytes=recording.size_bytes,
+            duration_seconds=duration_seconds,
+        ),
+        workspace_key=settings.gate_workspace_id,
+        connector_ref=STORED_VOICE_BUDGET_CONNECTOR_REF,
+        reservation_key=(
+            f"dropbox-call-v15:{recording.id}" if empty_result_recovery else (
+                f"dropbox-call-v14:{recording.id}"
+                if chunk_recovery else f"dropbox-call-v13:{recording.id}"
+            )
+        ),
+        period_key=occurred_at.strftime("%Y-%m"),
+        requested_microusd=max(
+            100,
+            duration_seconds
+            * settings.gate_telegram_voice_reserve_microusd_per_second,
+        ),
+        occurred_at=occurred_at,
+        language="ru",
+        enabled=True,
+        budget_scope_kind=STORED_VOICE_BUDGET_SCOPE_KIND,
+        on_recognition_start=mark_recognition_started,
     )
+    try:
+        result = await service.transcribe(command)
+    except (asyncio.CancelledError, Exception) as exc:
+        reason = (
+            "dropbox_call_recognition_interrupted" if isinstance(exc, asyncio.CancelledError)
+            else "dropbox_call_transcription_failed"
+        )
+        async with session_factory.begin() as session:
+            await session.execute(
+                update(PhoneCallRecording)
+                .where(*current_claim, PhoneCallRecording.transcription_stopped_at.is_(None))
+                .values(
+                    transcription_stopped_at=datetime.now(UTC), transcription_stop_reason=reason,
+                )
+            )
+        raise
     async with session_factory() as session:
-        stored = await session.get(PhoneCallRecording, recording.id)
+        stored = await session.scalar(
+            select(PhoneCallRecording).where(*current_claim).with_for_update()
+        )
         if stored is None:
-            raise DropboxCallWorkerError("dropbox_call_recording_missing")
+            return
         stored.transcription_status = result.outcome.value
         stored.transcript_text = result.alpha_input_text
         stored.transcript_language = "ru"
         stored.transcription_model = transcription_model
         stored.transcription_reason_code = result.reason_code
         stored.transcribed_at = datetime.now(UTC)
+        stored.record_processing_result(
+            stored.transcribed_at,
+            reason=None if result.alpha_input_text is not None else result.reason_code,
+        )
         if result.alpha_input_text:
             stored.summary_status = "summarized"
             stored.summary_text = build_audio_summary(result.alpha_input_text)
@@ -798,250 +910,8 @@ async def _transcribe_recording(
             stored.summary_reason_code = "audio_summary_generated"
             stored.summarized_at = datetime.now(UTC)
         elif result.reason_code == "telegram_voice_no_speech":
-            _store_no_speech_summary(stored)
+            store_no_speech_summary(stored)
         await session.commit()
-
-
-_TELEGRAM_VOICE_RECOVERY_GENERATION = 2
-
-
-def _store_no_speech_summary(archive: PhoneCallRecording | TelegramVoiceArchive) -> None:
-    archive.summary_status = "summarized"
-    archive.summary_text = "Распознавание завершено: речь не распознана."
-    archive.summary_model = AUDIO_SUMMARY_MODEL
-    archive.summary_reason_code = "audio_no_speech"
-    archive.summarized_at = datetime.now(UTC)
-
-
-async def _claim_authorized_telegram_voice(
-    *,
-    session_factory: async_sessionmaker[AsyncSession],
-) -> tuple[TelegramVoiceArchive, int] | None:
-    """Atomically consume one exact dead-letter recovery grant before provider I/O."""
-
-    expected_error = "openai_transcription_transport_unknown"
-    async with session_factory() as session:
-        archives = list(
-            (
-                await session.scalars(
-                    select(TelegramVoiceArchive)
-                    .join(
-                        TelegramReceipt,
-                        TelegramReceipt.id == TelegramVoiceArchive.receipt_id,
-                    )
-                    .join(
-                        TelegramOutboxEvent,
-                        TelegramOutboxEvent.receipt_id == TelegramReceipt.id,
-                    )
-                    .where(
-                        TelegramVoiceArchive.transcription_recovery_generation
-                        == _TELEGRAM_VOICE_RECOVERY_GENERATION,
-                        TelegramVoiceArchive.transcription_recovery_authorized_at
-                        .is_(None),
-                        TelegramVoiceArchive.transcription_status
-                        == TelegramVoiceOutcome.UNKNOWN.value,
-                        TelegramVoiceArchive.transcript_text.is_(None),
-                        TelegramVoiceArchive.summary_text.is_(None),
-                        TelegramReceipt.bot_key == "telegram_business",
-                        TelegramReceipt.status
-                        == TelegramReceiptStatus.DEAD_LETTER.value,
-                        TelegramReceipt.last_error_code == expected_error,
-                        TelegramOutboxEvent.status
-                        == TelegramOutboxStatus.DEAD_LETTER.value,
-                        TelegramOutboxEvent.last_error_code == expected_error,
-                    )
-                    .order_by(TelegramVoiceArchive.received_at.asc())
-                    .limit(2)
-                    .with_for_update(
-                        of=(TelegramVoiceArchive,),
-                        skip_locked=True,
-                    )
-                )
-            ).all()
-        )
-        if len(archives) > 1:
-            raise DropboxCallWorkerError(
-                "telegram_voice_recovery_scope_ambiguous"
-            )
-        if not archives:
-            return None
-        archive = archives[0]
-        generation = archive.transcription_recovery_generation
-        if generation != _TELEGRAM_VOICE_RECOVERY_GENERATION:
-            return None
-        if (
-            not archive.data
-            or archive.size_bytes <= 0
-            or archive.duration_seconds <= 0
-            or len(archive.sha256) != 64
-        ):
-            raise DropboxCallWorkerError(
-                "telegram_voice_recovery_archive_invalid"
-            )
-
-        # Commit the generation consumption before provider I/O. A crash now
-        # fails closed: a new owner authorization is required for another try.
-        archive.transcription_recovery_generation = None
-        await session.commit()
-        await session.refresh(archive)
-        return archive, generation
-
-
-def _telegram_voice_recovery_reservation_key(
-    archive_id: object,
-    generation: int,
-) -> str:
-    """Bind one recovery reservation to one isolated authorization generation."""
-
-    if generation != _TELEGRAM_VOICE_RECOVERY_GENERATION:
-        raise DropboxCallWorkerError(
-            "telegram_voice_recovery_generation_invalid"
-        )
-    return f"telegram-voice-recovery-v{generation}:{archive_id}"
-
-
-async def _recover_authorized_telegram_voices(
-    *,
-    settings: Settings,
-    session_factory: async_sessionmaker[AsyncSession],
-    http: httpx.AsyncClient,
-) -> None:
-    """Consume and run at most one exact transport-unknown recovery grant."""
-
-    claimed = await _claim_authorized_telegram_voice(
-        session_factory=session_factory,
-    )
-    archive_only = claimed is None
-    if archive_only:
-        owner_archive = await claim_owner_voice_recovery(
-            session_factory, workspace_key=settings.gate_workspace_id,
-        )
-        if owner_archive is None:
-            return
-        archive, generation = owner_archive, 5
-    else:
-        assert claimed is not None
-        archive, generation = claimed
-    now = datetime.now(UTC)
-    service = TelegramVoiceTranscriptionService(
-        downloader=_StoredCallDownloader(archive),
-        normalizer=TelegramVoiceNormalizer(),
-        budget=SqlBillingBudgetService(session_factory),
-        speech_to_text=OpenAITranscriptionClient(
-            config=OpenAITranscriptionConfig(
-                api_key=settings.openai_api_key.get_secret_value(),
-                enabled=True,
-                model=settings.gate_telegram_voice_transcription_model,
-                base_url=settings.openai_api_base_url,
-            ),
-            http=http,
-        ),
-    )
-    result = await service.transcribe(
-        TranscribeTelegramVoiceCommand(
-            voice=TelegramVoiceReference(
-                file_id=str(archive.id),
-                file_unique_id=archive.sha256,
-                declared_size_bytes=archive.size_bytes,
-                duration_seconds=archive.duration_seconds,
-            ),
-            workspace_key=settings.gate_workspace_id,
-            connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
-            reservation_key=(
-                owner_voice_reservation_key(archive.id) if archive_only
-                else _telegram_voice_recovery_reservation_key(archive.id, generation)
-            ),
-            period_key=now.strftime("%Y-%m"),
-            requested_microusd=max(
-                100,
-                archive.duration_seconds
-                * settings.gate_telegram_voice_reserve_microusd_per_second,
-            ),
-            occurred_at=now,
-            language="ru",
-            enabled=True,
-            budget_scope_kind=_CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND,
-        )
-    )
-    async with session_factory() as session:
-        stored = await session.get(
-            TelegramVoiceArchive,
-            archive.id,
-            with_for_update=True,
-        )
-        if stored is None:
-            raise DropboxCallWorkerError(
-                "telegram_voice_recovery_archive_missing"
-            )
-        stored.transcription_status = result.outcome.value
-        stored.transcript_text = result.alpha_input_text
-        stored.transcript_language = "ru"
-        stored.transcription_model = settings.gate_telegram_voice_transcription_model
-        stored.transcription_reason_code = result.reason_code
-        stored.transcribed_at = now
-        if result.alpha_input_text:
-            stored.summary_status = "summarized"
-            stored.summary_text = build_audio_summary(result.alpha_input_text)
-            stored.summary_model = AUDIO_SUMMARY_MODEL
-            stored.summary_reason_code = "audio_summary_generated"
-            stored.summarized_at = now
-        elif result.reason_code == "telegram_voice_no_speech":
-            _store_no_speech_summary(stored)
-        if result.outcome is TelegramVoiceOutcome.TRANSCRIBED and not archive_only:
-            await _requeue_recovered_telegram_voice(
-                session=session,
-                archive=stored,
-                now=now,
-            )
-        await session.commit()
-
-
-async def _requeue_recovered_telegram_voice(
-    *,
-    session: AsyncSession,
-    archive: TelegramVoiceArchive,
-    now: datetime,
-) -> None:
-    """Requeue only the exact dead letter whose archived transcript recovered."""
-
-    row = (
-        await session.execute(
-            select(TelegramReceipt, TelegramOutboxEvent)
-            .join(
-                TelegramOutboxEvent,
-                TelegramOutboxEvent.receipt_id == TelegramReceipt.id,
-            )
-            .where(TelegramReceipt.id == archive.receipt_id)
-            .with_for_update()
-        )
-    ).one_or_none()
-    if row is None:
-        return
-    receipt, event = row
-    expected_error = "openai_transcription_transport_unknown"
-    if (
-        receipt.status != TelegramReceiptStatus.DEAD_LETTER.value
-        or event.status != TelegramOutboxStatus.DEAD_LETTER.value
-        or receipt.last_error_code != expected_error
-        or event.last_error_code != expected_error
-    ):
-        return
-
-    event.status = TelegramOutboxStatus.PENDING.value
-    event.attempt_count = 0
-    event.available_at = now
-    event.locked_at = None
-    event.delivered_at = None
-    event.last_error_code = None
-    event.last_error_at = None
-
-    receipt.status = TelegramReceiptStatus.RECEIVED.value
-    receipt.attempt_count = 0
-    receipt.processing_started_at = None
-    receipt.processed_at = None
-    receipt.next_attempt_at = None
-    receipt.last_error_code = None
-    receipt.last_error_at = None
 
 
 async def _summarize_ready_audio(
@@ -1157,11 +1027,7 @@ async def _probe_duration_seconds(data: bytes) -> int | None:
         source = Path(directory) / "source.m4a"
         await asyncio.to_thread(source.write_bytes, data)
         try:
-            process = await asyncio.create_subprocess_exec(
-                "ffprobe", "-v", "error", "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1", str(source),
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-            )
+            process = await start_duration_probe(source)
         except OSError:
             process = None
         if process is not None:
@@ -1174,23 +1040,14 @@ async def _probe_duration_seconds(data: bytes) -> int | None:
                     raise
             else:
                 if process.returncode == 0:
-                    try:
-                        duration = float(stdout.decode("ascii").strip())
-                    except (UnicodeDecodeError, ValueError):
-                        pass
-                    else:
-                        if math.isfinite(duration) and 0 < duration <= 24 * 60 * 60:
-                            return max(1, math.ceil(duration))
+                    duration = container_duration_seconds(stdout)
+                    if duration is not None and duration <= MAX_DECODED_AUDIO_SECONDS:
+                        return max(1, math.ceil(duration))
 
         # Some files contain decodable audio but no container duration. Decode
         # only to a null sink; progress reports the decoded audio end timestamp.
         try:
-            process = await asyncio.create_subprocess_exec(
-                "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
-                "-xerror", "-i", str(source), "-map", "0:a:0", "-vn",
-                "-f", "null", "-progress", "pipe:1", "-",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-            )
+            process = await start_duration_decode(source)
         except OSError:
             return None
         try:
@@ -1203,16 +1060,8 @@ async def _probe_duration_seconds(data: bytes) -> int | None:
             return None
         if process.returncode != 0:
             return None
-        timestamps = [
-            line.removeprefix(b"out_time_us=")
-            for line in stdout.splitlines()
-            if line.startswith(b"out_time_us=")
-        ]
-        try:
-            duration_us = int(timestamps[-1])
-        except (IndexError, ValueError):
-            return None
-        if not 0 < duration_us <= 24 * 60 * 60 * 1_000_000:
+        duration_us = decoded_duration_microseconds(stdout)
+        if duration_us is None:
             return None
         return max(1, math.ceil(duration_us / 1_000_000))
 
@@ -1223,6 +1072,7 @@ async def _commit_cursor(
     session_factory: async_sessionmaker[AsyncSession],
     cursor: str,
     pending: bool,
+    webhook_received_at: datetime | None,
 ) -> None:
     async with session_factory() as session:
         state = await session.get(
@@ -1234,7 +1084,7 @@ async def _commit_cursor(
             raise DropboxCallWorkerError("dropbox_call_state_missing")
         state.cursor = cursor
         state.backfill_version = _CALL_BACKFILL_VERSION
-        state.pending = pending
+        state.pending = pending or state.webhook_received_at != webhook_received_at
         state.attempt_count = 0
         state.next_attempt_at = None
         state.last_error_code = None
@@ -1254,7 +1104,9 @@ async def _mark_retry(
             with_for_update=True,
         )
         if state is None:
-            state = DropboxCallInboxState(account_id=settings.dropbox_call_account_id)
+            state = DropboxCallInboxState(
+                account_id=settings.dropbox_call_account_id, attempt_count=0,
+            )
             session.add(state)
         state.pending = True
         state.attempt_count += 1

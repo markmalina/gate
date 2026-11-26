@@ -1,0 +1,767 @@
+{
+  "schemaVersion": "gate745.s1-source-files/v1",
+  "opsBase": "a58d84798d0471792d391987c27a3cd2f6e7bb03",
+  "scope": "PARTIAL_PROPOSED_CUTOVER_PATCH_ONLY_NOT_INSTALLED",
+  "changedPaths": [
+    {
+      "path": "agent-ops/actions/gate-snapshot-cutover/action-runner.mjs",
+      "beforeRawSha256": "8550bb9d5888895d33ba6f3f0c0f15ea4466d407a85ec26e2c516f418b14c83d",
+      "afterRawSha256": "7a29679012dd7c90f06a3f1fe543828ca61939d19ed1fa455f2e67b5b1cedea4"
+    },
+    {
+      "path": "agent-ops/actions/gate-snapshot-cutover/artifact-verifier.mjs",
+      "beforeRawSha256": "ba8be2f52d7563792f7ec37d537997ae98013a582b8e3970b476de12875e2cfa",
+      "afterRawSha256": "90cdb04f68dcbf3b062e5aab4f0f9b02ce15527f1d3fee3f7c748ca5a7b044f5"
+    },
+    {
+      "path": "agent-ops/actions/gate-snapshot-cutover/caller-context.mjs",
+      "beforeRawSha256": "372abb993b11aefe0b39bb3844ff390f24260461bf8d4c9bfc35a6b2f4d3056e",
+      "afterRawSha256": "b6189215dedb01ad314310e5cb63cb96b2eb6a323330b0ab3e122dbae4e02692"
+    },
+    {
+      "path": "agent-ops/actions/gate-snapshot-cutover/contract.mjs",
+      "beforeRawSha256": "b1b4050066547efbc54122c510badfc860e213f98c86c4b4bdbfb2069e7b9c2c",
+      "afterRawSha256": "5d881b5abe1c493793144382846132483a0ed13111b656f8568a768661b2a1de"
+    },
+    {
+      "path": "agent-ops/actions/gate-snapshot-cutover/profile-policy.mjs",
+      "beforeRawSha256": "3b3892ce36aaf8dea49162e2296bf6a953637cf92eb1799597c8fb53eba67d33",
+      "afterRawSha256": "8ebd33a23f9e2169a85e9e1c4f9ac49bf51cf70e754039bb4af7e97a0c433cca"
+    },
+    {
+      "path": "agent-ops/actions/gate-snapshot-cutover/profile.json",
+      "beforeRawSha256": "6df45d551b0df67c51aa35c1a642fc6b1ad667397a4143fe40813fb590da8d6a",
+      "afterRawSha256": "eea8e7212cd8e463b7d85fa3343f6a6667cb40ad45597c9c8a19299e3af70616"
+    }
+  ],
+  "sources": [
+    {
+      "localRoot": "ops-source",
+      "path": ".github/workflows/ci.yml",
+      "bytes": 1247,
+      "gitBlob": "10b8b976f2ada644772614c07c7385d350a4c087",
+      "rawSha256": "e72abf66eeaab01988d30a00d644a5d5aea20fedecafa1c19407117510ad0ca9"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": ".github/workflows/security.yml",
+      "bytes": 6054,
+      "gitBlob": "43df0a55eda375ac34841734ebae9587ab6c4cdf",
+      "rawSha256": "ac56ed6fadbc2fc55415ee64f5a97ce16393202e4700e169a4a0bfff4be1e871"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/emergency-deploy/emergency-deploy.mjs",
+      "bytes": 29274,
+      "gitBlob": "43caa2acf0a25b154dc10ac5e82243a6e5cd43e9",
+      "rawSha256": "90e14ae45c0ec235d7efd0aec3346d05f4502b1b29ebb2c478e3a6511b14805a"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-deploy/action.yml",
+      "bytes": 1792,
+      "gitBlob": "4cbf96b5fb61f8e215e54cc4e3eded4ae3e95e60",
+      "rawSha256": "7511102595c3122c75bda8bc7b6cdb870d34585895b62269a7a31882cab7072b"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-deploy/gate-deploy.mjs",
+      "bytes": 13323,
+      "gitBlob": "8230f1fbda14813f3d6767175177dc0a6471a5bc",
+      "rawSha256": "b84a5a57f28503fdd0ad27f26781fa9d904582c40f2a5ce833189104a878f13d"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-artifact-verifier/action.yml",
+      "bytes": 1371,
+      "gitBlob": "e1b1cfb3bb69d0849e49a95f44843a2c80bd59da",
+      "rawSha256": "18c105721a5cb93a5419b4d30be7f7c2480b2a830582ad6ca7f55c86f72fba6b"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-artifact-verifier/entry.mjs",
+      "bytes": 3891,
+      "gitBlob": "fc0136647a07690604ff172733ff2ee59fe11acf",
+      "rawSha256": "ba459cdde908a95208157b5c56be168ff9b4a91c7b68d5226f2d303dcc69a8f3"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/README.md",
+      "bytes": 19657,
+      "gitBlob": "d9886e90fcf7725a90bf069bfce9a83e21820242",
+      "rawSha256": "b3d826689c01ed5074f4f853f006f4f9ddf67299e0a750567010f963cc32e750"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/action-runner.mjs",
+      "bytes": 14517,
+      "gitBlob": "4b8d828a07eabc2224ec1365b883afb491bc3115",
+      "rawSha256": "8550bb9d5888895d33ba6f3f0c0f15ea4466d407a85ec26e2c516f418b14c83d"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/action-runner.test.js",
+      "bytes": 12207,
+      "gitBlob": "85ce6a137d015f1c6b9a3b4fd0b5e21188ab5eda",
+      "rawSha256": "29798c1307a4dfd3633225720187ff28932c399b127f67f15537899ddea47743"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/action.yml",
+      "bytes": 1649,
+      "gitBlob": "dea34ef07bb5ba88a8434378ab6d85bb3542c0de",
+      "rawSha256": "873fd3a87bde1aa111a87b7f5b493720f4595a4964cb3aaefa14748387cf0e4d"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/artifact-verifier.mjs",
+      "bytes": 3991,
+      "gitBlob": "70236518cb53361afa76dd91111cd0c1d0352983",
+      "rawSha256": "ba8be2f52d7563792f7ec37d537997ae98013a582b8e3970b476de12875e2cfa"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/artifact-verifier.test.js",
+      "bytes": 6688,
+      "gitBlob": "38a6ea2505206201a8a547554d022a88ab5ff23a",
+      "rawSha256": "d61f3e7d40d61c502420048daf893663b4a9399ebacb1764024114e4f67fa32a"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/caller-context.mjs",
+      "bytes": 3442,
+      "gitBlob": "591017841a8c8b317c8c7d1340eb56ecfe0026e9",
+      "rawSha256": "372abb993b11aefe0b39bb3844ff390f24260461bf8d4c9bfc35a6b2f4d3056e"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/caller-provenance.test.js",
+      "bytes": 5269,
+      "gitBlob": "48c631069975a1f68c1a65f76673b2314de54122",
+      "rawSha256": "625f8b8790d7be47798cbae46874731489c8c2ac2814a0333dc0d6d45f64b9d4"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/contract.mjs",
+      "bytes": 1143,
+      "gitBlob": "8902c71b4d0f8b69e5dfdf781a3a5ac16398b63d",
+      "rawSha256": "b1b4050066547efbc54122c510badfc860e213f98c86c4b4bdbfb2069e7b9c2c"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/document-schema.test.js",
+      "bytes": 4401,
+      "gitBlob": "165662a7129664ff55995eece3818ef7361b9e79",
+      "rawSha256": "aa8299826a0659d64dc52a5c1a4d2edbe40d2a7adcf298024942ee3a8a181520"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/entry.mjs",
+      "bytes": 4091,
+      "gitBlob": "dfd3b55f9cffee3b59109f4b44522ab96bd4a19e",
+      "rawSha256": "c36d1cb50d5b4d2e7a967d68fa27778b75198870fbf08e565adde5e413560a74"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/failure-receipt.mjs",
+      "bytes": 1082,
+      "gitBlob": "0a7ed59e4c20a2d4143dd10acef58603b6189bdb",
+      "rawSha256": "9ad5cd7fc279dbc9b3abb0d0a31371f1f4210ce5b9ee7e7bf4dad88682471467"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/failure-receipt.test.js",
+      "bytes": 1439,
+      "gitBlob": "e70e0e46fd4a2ad264723cf656f6895138c80170",
+      "rawSha256": "0ba92267f69e59ab82e614db31c881cd1c381edda3fabfcccaf4494aa83bf810"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/fixtures/gate-snapshot-client-workflow.yml",
+      "bytes": 11050,
+      "gitBlob": "f2eac545a3037cdcf46bedca3d5c4847a4c5d4e5",
+      "rawSha256": "ed8c8b9fe86d74b235c609bcec13e66f2d5a427173e3853b3e2ab0ea73413e17"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/gate-snapshot-cutover.mjs",
+      "bytes": 27264,
+      "gitBlob": "179aa6dcfcee561867f67a504426413548ff48e3",
+      "rawSha256": "c869276ecdf0474280b336be9cc34efe2abfc815fb815ab5c33eb8e09d440c9b"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/gate-snapshot-cutover.test.js",
+      "bytes": 13243,
+      "gitBlob": "a90638e41aa6a11af8699e5d7aabd2493598a973",
+      "rawSha256": "57577426328c59518e8373fd3200981da265d93adb53daeadca0b659fcef1d7d"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/graphql-evidence.json",
+      "bytes": 50372,
+      "gitBlob": "035ec8be8d7765e33413ffe8961b1b78c3b859b5",
+      "rawSha256": "82cb39a8331874584f8960b4e95101c168428736667ea9f310f0c27f1f80ebb8"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/native-audit.test.js",
+      "bytes": 34145,
+      "gitBlob": "419469f228801811a352669e0a05f4e3caf3ef90",
+      "rawSha256": "35ed89a8b0c77786de02ab6252165b52aeaef5ef0c3c729cd7374b08d03f085a"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/native-cutover-core.mjs",
+      "bytes": 12820,
+      "gitBlob": "8cf387878242685f3f3aeaab89cf68ef26d7e071",
+      "rawSha256": "0007cc71da3ef61337cc495dd15d7ba3336c1ea336d1ed3d58e8f3552de2ba48"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/owner-authorization.fixture.json",
+      "bytes": 21652,
+      "gitBlob": "40da201b018c81b58dc8e93ef829ed7e4ac1e3db",
+      "rawSha256": "7ec34f52edceb1138fe81730f33fec13b98e9d8a2491c05c24abf9429b343550"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/production-equivalence.test.js",
+      "bytes": 3260,
+      "gitBlob": "c8ad3b7a807f389bfa2c2f586994a53af0f954e9",
+      "rawSha256": "28bb36b28fd4f849eb9b0359703621cf943dffbf920837507fc72b18883ef9b7"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/profile-policy.mjs",
+      "bytes": 2780,
+      "gitBlob": "8fa94b7138bb2cb93f038c07235745384d720619",
+      "rawSha256": "3b3892ce36aaf8dea49162e2296bf6a953637cf92eb1799597c8fb53eba67d33"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/profile-policy.test.js",
+      "bytes": 1537,
+      "gitBlob": "0de725aafcb129e594dae91f1fde808220dee435",
+      "rawSha256": "adc7af360c9eec6e53830a1d1f71ebaf6ffe9101d41fcc3cabc4e87ab0b03c79"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/profile.json",
+      "bytes": 2731,
+      "gitBlob": "cbfc29d2aba688bc55c91495626bd9a87e57fd16",
+      "rawSha256": "6df45d551b0df67c51aa35c1a642fc6b1ad667397a4143fe40813fb590da8d6a"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/release.json",
+      "bytes": 561,
+      "gitBlob": "d24afde6020a7f194166bc6c71167e8e398e2519",
+      "rawSha256": "659e295d6f2f98cd176bd0ab979fdaf1b365fbb7dfcea8956851c5ae3ac57762"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/requester-extension.test.js",
+      "bytes": 2100,
+      "gitBlob": "eb5e496f56a97203ad3cf61302409e130bc101a0",
+      "rawSha256": "36d6200a830c98a5a89e528e1cc5ddaa1551ca4ee0a7e86aeeb19b204990e7b9"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/schema-allocation-projection.json",
+      "bytes": 3749,
+      "gitBlob": "c5084dc79ad9108768ff32896581996d5660c3f9",
+      "rawSha256": "e0bb64440527b8ef07e7ce1cbd8a89a69d3aa9e0f6028a83bf432aef963fd0c2"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/schema-extra-projection.json",
+      "bytes": 39058,
+      "gitBlob": "b80bd1b8a009b3eaf34b8ad7953469c507ebb3a1",
+      "rawSha256": "cd483b38af4c03632a7f1214a122fab4e36ef7a47856f7e4e725c8adadb41531"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/schema-network-projection.json",
+      "bytes": 11968,
+      "gitBlob": "a13e31b63f7d7d6ea9a99fd11a0023cfe4df617d",
+      "rawSha256": "980bf52c40a6942a1dc71064372a8f54ed6ec9feb7b22eb19202f2c962a06aa5"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/schema-project-projection.json",
+      "bytes": 2382,
+      "gitBlob": "d174585c1c44e4fbff0d76c4f90a3ef57c3d3e36",
+      "rawSha256": "87a3d8d17af49477b0c84087967af9bcb72fbbdaac0111d90cfae0ed83b5ef34"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/schema-services-edge.json",
+      "bytes": 854,
+      "gitBlob": "49435cdcb7a586dea53e22ee7206541e41d021ce",
+      "rawSha256": "64f84f005c5cb87b9aeb90d5bb00788e860e7c747d576d41adffd1b47edef425"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/schema-variable-projection.json",
+      "bytes": 3179,
+      "gitBlob": "6dd227a0d8ce57092e4bc9780b2d6feec14f63eb",
+      "rawSha256": "97275fe6b84286b76dbc10f986c927a666da75a0b548c5e742f66188a0def2cb"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/schema-volume-extra-projection.json",
+      "bytes": 2828,
+      "gitBlob": "63a32bbfc04930b14feeca65ffb36ca57f7763a3",
+      "rawSha256": "917db62cdd7b0256a041b98787cda2718a8a4efed641dbf7fd33d943a522243d"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/schema-volume-projection.json",
+      "bytes": 3910,
+      "gitBlob": "c7652ee0bc6a285ac088cbc491abc813c5f0d9f8",
+      "rawSha256": "dc2d1b2f8c5fa1b239d637d7d7052a59d7716c550d2edd248f6d50ddc19cd596"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate-snapshot-cutover/verify-cutover-receipt.mjs",
+      "bytes": 3980,
+      "gitBlob": "940469da0dfe334cf59e392443381472febe3524",
+      "rawSha256": "34d8981cbe7e46daab6247012a326740d9a122dc0a6755f29bdf4de1a6eca881"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/README.md",
+      "bytes": 10145,
+      "gitBlob": "bd969645881c701d3876a1a90ee97d63d1141d9c",
+      "rawSha256": "7fd646a056a631e6f5ef2bd34a05e15d80dcb9eeadafaf52b7cb3f9a6aedfcc7"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/admission.mjs",
+      "bytes": 13146,
+      "gitBlob": "8cedfbb3895af138936f645bf8f226f62c8225f4",
+      "rawSha256": "b1844208e9acb5bf2bcf317705ce07d58361046c501bcf4207ed3a71aef5cf95"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/artifact-loader.mjs",
+      "bytes": 11815,
+      "gitBlob": "58ed44ccf1c01bb64fa5d82857fbe5e104259cdb",
+      "rawSha256": "aca30510ca90d7b141e24e63a25fb777ba8a80f77ea125d310c39654f485a793"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/configuration.mjs",
+      "bytes": 6644,
+      "gitBlob": "f5b1a55ae1a9a114670ada902a5d824dfcf4e9f1",
+      "rawSha256": "e40a767be54a00dac3dc7390c5dfd4baf78dd3a01f67de27053d77c40060aba7"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/controller.mjs",
+      "bytes": 11002,
+      "gitBlob": "521134616afc25515202e3a9c954c2370b56c498",
+      "rawSha256": "3d1c52ee3fc3b08376c0bca75993aaf243da15505dbda456c086f66560da2111"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/controller.test.js",
+      "bytes": 20500,
+      "gitBlob": "c9648858470065403ea758373c96b0a179e579ce",
+      "rawSha256": "2c910bdce8ab5b16424bcfdce7de766ac3481dd7af214aab3c8e9728cffd386d"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/entry.mjs",
+      "bytes": 6769,
+      "gitBlob": "685cd42c8058b0c0f4e17e30be8a4a038e7f9b1c",
+      "rawSha256": "f96be1d2e13ec7e0084005b57b68e62b76463525d76d154748134594f38b1e2a"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/full-flow.test.js",
+      "bytes": 30370,
+      "gitBlob": "88a7e4f926f72ec11121236cb792aa2c4c50b24a",
+      "rawSha256": "5e4c966b92c23c0aca3f9ec623dfe8f496a2b6af1822b1b8adc7829d1136f1b3"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/helper-transport.mjs",
+      "bytes": 7138,
+      "gitBlob": "f47fd25879e49280a3bdad850708073ad8c748a9",
+      "rawSha256": "aa49484a76d6bc4f65e77288b07b0377de92163f706c8ff35ad6c2f21c4b1a19"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/ledger.mjs",
+      "bytes": 2652,
+      "gitBlob": "285e1094114a1b33c510ef148160f19b2b3cede8",
+      "rawSha256": "61c68ae93f264b2a8f4230b80100734fde0e4e323600dfb9d357bd4dba1db84a"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/native.mjs",
+      "bytes": 25602,
+      "gitBlob": "bafb6b9db989f2ffa1a87971a8e7b743033256dd",
+      "rawSha256": "b47bb7c01f33766ded58d3ebfc10121459674853dd0eea354e8c0f77f760b819"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/oidc.mjs",
+      "bytes": 7614,
+      "gitBlob": "a05f4275459459815c46d752f5efc396886da9a4",
+      "rawSha256": "3c87120f1944ca204b99595db7e017c8c65d24ba5d880342d350d2e50bb16551"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/policy.json",
+      "bytes": 657,
+      "gitBlob": "7aa226e413bc17b14062672e4ea22317aecdd568",
+      "rawSha256": "3a2ce3dac8ec1ba904c25ef2622fcb9438a7d02d606d3f590f6eadbcdabec094"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/policy.mjs",
+      "bytes": 3866,
+      "gitBlob": "814bb2efa33a1b21f5b9b0eff63cecf7b3e6f904",
+      "rawSha256": "835074f97c191782d96f4d09a220675d4a4d3bd51bbdb7388eda29499bd9e6f2"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/primitives.mjs",
+      "bytes": 3709,
+      "gitBlob": "f8b5bb06054781ec8ecdd39feabb0d06af2066d0",
+      "rawSha256": "1e62bc98ed7ce94e7d9de5a0df3958d048b1d3e402ded4960c127707a64d1804"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/production-lifecycle.test.js",
+      "bytes": 2088,
+      "gitBlob": "5998526508b3ebe6884db24a7ccb2cd03e5285fc",
+      "rawSha256": "cc70a25da17ecae3a1e1398d8d3b44dbebad4b4bca607bafe1e218c61cc75bba"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/schema-configuration-projection.json",
+      "bytes": 29727,
+      "gitBlob": "07e957fe64f18c86bc255438693b0e81cddefcb1",
+      "rawSha256": "32b9b10a98ec98d02cbcbec2163d6b6df4a01d68ba57dd9be15cccd4b3f6b4e6"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/source-admission.mjs",
+      "bytes": 12058,
+      "gitBlob": "378eca725cfb4991de6e01425b135698f6f813d4",
+      "rawSha256": "29bd10ce6d33f88da72dd1834bfb2b0cf669c64627c8ddc23f91e122c8994bd0"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/test-vector.mjs",
+      "bytes": 10661,
+      "gitBlob": "ccb839c97b348c653a0f416287d5cc09fcd93ceb",
+      "rawSha256": "2ec1a7ad9572133a2c310d1d793a02bc745a2344b5442cab0bdc81cf47cf4f16"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-fixture-controller/verifier.mjs",
+      "bytes": 16749,
+      "gitBlob": "3c3b87e3ef95851b1279a80d38e6f4bc157fec51",
+      "rawSha256": "e0c8a97f04d7967a4f13530a84445a5b6909027daa30175efd82a60d18c0f9a6"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-isolated-fixture/README.md",
+      "bytes": 11268,
+      "gitBlob": "5e20847840711c12868df92d61ce0fccf495e757",
+      "rawSha256": "9a63d2e7c90dcb2d11da62d08426a81df0daebf821003621b702cc5673504007"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-isolated-fixture/action.yml",
+      "bytes": 288,
+      "gitBlob": "e51fe97e5ce2f8a472eb6188e2a59c4de6086dbd",
+      "rawSha256": "93d504c33d0847e9dc34a8dc2245c27b0d134d572cd8b9f5a182290755e021f8"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-isolated-fixture/entry.mjs",
+      "bytes": 792,
+      "gitBlob": "00da0ad800663ed70933011d0a60611714b26050",
+      "rawSha256": "10b6a738219670320e02fae77a3aa3f4bd61d2b20a807bfb0d7f5a6f961eaf4f"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-isolated-fixture/fixture-manifest.json",
+      "bytes": 133,
+      "gitBlob": "aab33677d3421434b9546333859e3a59881a7fd7",
+      "rawSha256": "5520aa482a18867a8804b111fb4efd7d95f63b8a5883cb0006b3b9936447bfe3"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-isolated-fixture/fixture-manifest.schema.json",
+      "bytes": 15109,
+      "gitBlob": "ce36bb7df1f815435c40d43a62748d553d7a4243",
+      "rawSha256": "da76566aa3b77e8d57fd3d6393f07f2d1372a358b821c4ae829a2ec3372f7af8"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-isolated-fixture/fixture-native.mjs",
+      "bytes": 21986,
+      "gitBlob": "d174761753fba32e65a7b177934852574b237daa",
+      "rawSha256": "31cb1869d800ac6b47f61e1309b9f8faf2554eb004662f7ccb597a18323f9181"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-isolated-fixture/fixture-native.test.js",
+      "bytes": 24241,
+      "gitBlob": "3d34fd30461883093a4a062a84b1c1b2d48eaafa",
+      "rawSha256": "14c5d2f704271e5cef766ef19ab64004ab482bc4d5066332da3aff43ad6bebf4"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-isolated-fixture/fixture-receipt.schema.json",
+      "bytes": 32682,
+      "gitBlob": "7542553b8189a1982a44b94a490e3e911379f931",
+      "rawSha256": "18743da4514f23699a12496013dd458c71f0596f2469288548d33864157018cc"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-isolated-fixture/fixture-receipt.test.js",
+      "bytes": 13859,
+      "gitBlob": "2abb166c6087b5cf1e96f582a0f587da703c3aff",
+      "rawSha256": "acf0d8ca27d856814425ef287b90f5be8a7ab9376747cbd0a214dce40a456bb5"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-isolated-fixture/fixture-recipes.mjs",
+      "bytes": 7799,
+      "gitBlob": "0a54a8c4d3fd6c293582147f9ccff4b1b2024eb0",
+      "rawSha256": "dfdbe81a335e000cc7e0972d9f5a82cedb91f88b86301c91f602245bb5fb42a9"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-isolated-fixture/manifest-policy.mjs",
+      "bytes": 12153,
+      "gitBlob": "c36ef7abcbc1272d87a248dbb6202ff97406cb4b",
+      "rawSha256": "ee044c20a6a3aa0a4f89889a4a8a64514b2f02c564ab18fa5efb6890c639a0c9"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-isolated-fixture/manifest-policy.test.js",
+      "bytes": 11059,
+      "gitBlob": "ecfbd8e4814b929616083e32c49a2c4ac3b60c7d",
+      "rawSha256": "c5af23b8595225b18cbff9f2c43f8160328b9234fac3584f8359499e77c199a0"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-isolated-fixture/manifest-test-data.mjs",
+      "bytes": 2984,
+      "gitBlob": "fde81af59cc5cfbea67ef0bfbd3f3bff3ccc41f4",
+      "rawSha256": "81d3abee25879ad74c949de7acba0b82e8953e94083d95e8076d204ee9693e8f"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-isolated-fixture/release.json",
+      "bytes": 297,
+      "gitBlob": "156111afedfb7be2be189dfbc7f76dc3113430c2",
+      "rawSha256": "ccea6c936d24beed1fe5a33c3de585868279da092e286f47bc8ffdda206d68c0"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-isolated-fixture/source-policy.mjs",
+      "bytes": 7274,
+      "gitBlob": "a2241eb43c3bbc7136d1bbe3955bb24528fbaad3",
+      "rawSha256": "a344cbc08036b04d049393bf5a44f3af5ff5e6518d6577251b4720d730dd5565"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/gate745-isolated-fixture/verify-fixture-receipts.mjs",
+      "bytes": 17565,
+      "gitBlob": "b4d68bb5d1d2da8b6f76c3e784c89ff57f2090fb",
+      "rawSha256": "597662ef439bbaf894a9a065dfe3a8ced276fb4d1d4afe7ddb323d511018cbc6"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/github-app-requester/action.yml",
+      "bytes": 1784,
+      "gitBlob": "4e714c9c65136e5453dde0534c33bde818bbf9d9",
+      "rawSha256": "2e004bfe5b500634b7198e8b295caacd5720bacf0972dc6ba90b2ac84af4400b"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/github-app-requester/src/main.js",
+      "bytes": 6064,
+      "gitBlob": "91ee790e6464a601ade1623f4a8ba75856f7f2a2",
+      "rawSha256": "431814399717bd52b3725dd63312c1ab019d085fe8b8cc677fbdbe59b8ecac21"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/actions/github-app-requester/test/requester.test.js",
+      "bytes": 10460,
+      "gitBlob": "3bfa2017b79e76a45f6b305d0654c4b0db28b6a4",
+      "rawSha256": "8a2d8d06da154f7767b10bc96230d12511edc70f4c8772a9ae354ee4c7f77668"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "agent-ops/skills/use-agent-ops/references/safety.md",
+      "bytes": 2301,
+      "gitBlob": "175dce635f4694d8ea7979556cb5fd1f23d9c32e",
+      "rawSha256": "0ab6422b0e83139141e337899168a9fc5bfbd80dbd3ea159f058caad90560e1f"
+    },
+    {
+      "localRoot": "ops-source",
+      "path": "package.json",
+      "bytes": 2161,
+      "gitBlob": "d9117e9dd794557e5bed2b7cbc965276f25a53c1",
+      "rawSha256": "ef50a42bc42c8e158cc622be2b476776edbabe77af423e05023168872109820c"
+    },
+    {
+      "localRoot": "gate-source",
+      "path": ".github/workflows/gate-snapshot-cutover.yml",
+      "bytes": 11146,
+      "gitBlob": "49c9f6643b148b6e2c610b69f9fad66f36d1fa8f",
+      "rawSha256": "d73c8eb3e258c2b67395e15a08ed8581b3ff7556090b649e724b4b0925d90684"
+    },
+    {
+      "localRoot": "gate-source",
+      "path": "agent-ops.gate-snapshot.lock.json",
+      "bytes": 469,
+      "gitBlob": "2d323c89022b4644a5ada12efb6ea632e7301ea0",
+      "rawSha256": "6b01c4f3c0edc707c9035109e04ea6d41f87366991064d482c61ee68cd8ef6f7"
+    },
+    {
+      "localRoot": "gate-source",
+      "path": "docs/operations/GATE745-FIXTURE-BOOTSTRAP.md",
+      "bytes": 28927,
+      "gitBlob": "922e3c0bbdacff4d1d802e33c45d6fc5824ca87e",
+      "rawSha256": "bb158e5c3f2196e1897aca134c21e4d0f34b431228993bd100c6504d08a4262d"
+    },
+    {
+      "localRoot": "gate-source",
+      "path": "docs/operations/GATE745-OPS-CONTROL.md",
+      "bytes": 7325,
+      "gitBlob": "d38f0df4336f6d891309a09eb95f2fa32f60926a",
+      "rawSha256": "14efa3925e304cc846406846f75bec1d1820a59af2e09e1bfd582cdfeb7348ea"
+    },
+    {
+      "localRoot": "supporting-source",
+      "path": ".github/workflows/gate745-caller-source-ci.yml",
+      "bytes": 1160,
+      "gitBlob": "6efffc6c13dbe9d5dc027f229016831723946163",
+      "rawSha256": "46a28d770f61e7bb87c10c65deaa95598811e7ae52d64e1ed2161187df8d4f6c"
+    },
+    {
+      "localRoot": "supporting-source",
+      "path": ".github/workflows/gate745-controller-source-ci.yml",
+      "bytes": 959,
+      "gitBlob": "37b17231a206bc05c64df4d8d4eb14f4649902e0",
+      "rawSha256": "bc8cb0223d61b89475357ef26eef9a2139df2266a816746378d08be02d2537b6"
+    },
+    {
+      "localRoot": "supporting-source",
+      "path": ".github/workflows/gate745-fixture-controller.yml",
+      "bytes": 14624,
+      "gitBlob": "05dfb65fa5cb70fba81717fee44e7de25d38fa8d",
+      "rawSha256": "2a70bcbe1ed9830806b6622c7aa8e5428d3038071fc737293663b030694145c0"
+    },
+    {
+      "localRoot": "supporting-source",
+      "path": ".github/workflows/gate745-native-fixture.yml",
+      "bytes": 2211,
+      "gitBlob": "6466e8b0752ad07ee1e4f7f2c5602f8f872e0183",
+      "rawSha256": "175fcc3e98a6516c8983fa8877df114987501fd8f96804ea047d481d479c62d7"
+    },
+    {
+      "localRoot": "supporting-source",
+      "path": ".github/workflows/ops-deploy.yml",
+      "bytes": 3142,
+      "gitBlob": "1a1dac30eb1b1d75f632ae9d58bfcc8b997bda63",
+      "rawSha256": "d161e6f639a728105403d5d3be0dc3139b7e7a1254c13c083b1eb144fb903ecd"
+    },
+    {
+      "localRoot": "supporting-source",
+      "path": "scripts/gate745/fixture-artifacts.mjs",
+      "bytes": 12615,
+      "gitBlob": "9f38c11cabc9b514f3461f23b8b859ba4620fbd5",
+      "rawSha256": "bc21a00d0bd8503bb1858cc2222ddd8581946c6d7c3daa58522146e55e976fd4"
+    },
+    {
+      "localRoot": "supporting-source",
+      "path": "scripts/gate745/fixture-caller.mjs",
+      "bytes": 4365,
+      "gitBlob": "ccc1a36d02b1fa3eb7f98cd3d97a6637a83c2c33",
+      "rawSha256": "5b1c83d2bfe2af0bb6e73e9e3a00ed50b06503a3a9d60e41f2e876cb7a368fe7"
+    },
+    {
+      "localRoot": "supporting-source",
+      "path": "scripts/gate745/fixture-caller.test.mjs",
+      "bytes": 6509,
+      "gitBlob": "a019d1e4c49b41020f883308ab7bf56e277b4bc3",
+      "rawSha256": "50a1a2f0e5aa69c7686165827884b9295570d2f0cf44d81bbae7fbf4f8afdeee"
+    },
+    {
+      "localRoot": "supporting-source",
+      "path": "scripts/gate745/fixture-controller.mjs",
+      "bytes": 24649,
+      "gitBlob": "014d57ed8219516b0db6d9d65449743c19ebbadb",
+      "rawSha256": "d138657a1daf3100c6f9be6b72793c84323412594e2834ea70237422cd16eee4"
+    },
+    {
+      "localRoot": "supporting-source",
+      "path": "scripts/gate745/fixture-controller.test.mjs",
+      "bytes": 56294,
+      "gitBlob": "44915419d8d8d600b6deddbbeafce8f40291e6ab",
+      "rawSha256": "ece0ed0af2756dde3e1f56d1c44398f1a5ad96bf33946f5f131cb6563becfe9b"
+    },
+    {
+      "localRoot": "supporting-source",
+      "path": "scripts/gate745/fixture-helper-transport.mjs",
+      "bytes": 5636,
+      "gitBlob": "5ca0f1fba9e7b39bc136b9c9f0d1a704773363a6",
+      "rawSha256": "c83d130cd133a47d3d69c0e881a8b21255b57b613f1635f4eaf4edbcc5d677ad"
+    },
+    {
+      "localRoot": "supporting-source",
+      "path": "scripts/gate745/fixture-hosted.mjs",
+      "bytes": 6045,
+      "gitBlob": "56300ed5fb9ffa05ea81de0a70ac5bb64653858d",
+      "rawSha256": "2cc6dd529054798f77246772bebd2bb588db68b7c2deab93d7939eb0d59c9b6c"
+    },
+    {
+      "localRoot": "supporting-source",
+      "path": "scripts/gate745/fixture-oidc.mjs",
+      "bytes": 7365,
+      "gitBlob": "3e280005d49e7077db6884976335b1cc761e996b",
+      "rawSha256": "f47aa7d394e956f9ce3ed8f19ca957ebb9e2f5dcfa4096388416bfa55fe9686b"
+    },
+    {
+      "localRoot": "supporting-source",
+      "path": "scripts/gate745/fixture-ops-source.mjs",
+      "bytes": 10865,
+      "gitBlob": "858514be9856ba22023f8300b3204a289e1a8b94",
+      "rawSha256": "ab0a867fb7fcb7218d170113ac638b24b73fdf6f4ca4e049890d311cd2efc661"
+    },
+    {
+      "localRoot": "supporting-source",
+      "path": "scripts/gate745/fixture-reservation.mjs",
+      "bytes": 5412,
+      "gitBlob": "bd4d146de6ac563fbb8e8e0d3763c9734609bd12",
+      "rawSha256": "cabf18c5dc8596931fb009f314dc4070cdc6b8e775588d42635e1f3157deb28b"
+    },
+    {
+      "localRoot": "supporting-source",
+      "path": "scripts/gate745/fixture-source.lock.json",
+      "bytes": 1122,
+      "gitBlob": "b89706ae7d401deab1e32d54fda7c7640859cbbf",
+      "rawSha256": "aaa3ed4e64564c29f8f29fa78a1d044de85e32069fc7c4a1808c0c5b24564979"
+    },
+    {
+      "localRoot": "supporting-source",
+      "path": "scripts/gate745/fixture-test-vector.json",
+      "bytes": 29450,
+      "gitBlob": "44ad419129347de8ae5674f52ed72c6dfc06edf1",
+      "rawSha256": "f0624368c6390f90ccfe4049a8886c2836012bb480fd40408ae012f490b057db"
+    }
+  ]
+}

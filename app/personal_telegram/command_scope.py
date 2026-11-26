@@ -96,10 +96,15 @@ class CommandDelegation:
 
 def personal_client_namespace(principal: Principal) -> str:
     """Namespace comes exclusively from validated OAuth issuer/client claims."""
-    issuer, client = principal.oauth_issuer, principal.oauth_client_id
+    if principal.auth_method != "oauth2":
+        raise CommandRuntimeError("oauth_client_required")
+    return oauth_client_namespace(principal.oauth_issuer, principal.oauth_client_id)
+
+
+def oauth_client_namespace(issuer: str | None, client: str | None) -> str:
+    """Shared identity for a configured grant and a verified token."""
     if (
-        principal.auth_method != "oauth2"
-        or not isinstance(issuer, str)
+        not isinstance(issuer, str)
         or not issuer
         or len(issuer) > 2048
         or not isinstance(client, str)

@@ -202,6 +202,7 @@ async def continue_note(
             )
             note.transcription_state = "processing"
             note.attempted_at = now
+            note.reset_processing_attempt(queued_at=None)
             await session.flush()
     except IntegrityError:
         async with factory() as session:

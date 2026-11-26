@@ -169,4 +169,3 @@ async def operations_health(
         content=payload.model_dump(mode="json"),
         headers={"Cache-Control": "no-store"},
     )
-

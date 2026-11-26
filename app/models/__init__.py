@@ -35,6 +35,12 @@ from app.models.domain import (
     TelegramBusinessConnection,
     TelegramUpdate,
 )
+from app.models.reply_media import (
+    ReplyMediaBudgetReservation,
+    ReplyMediaExecutionBudget,
+    ReplyMediaItem,
+    ReplyMediaPackage,
+)
 
 __all__ = [
     "ALPHA_MAYAKI_PROJECT_ID",
@@ -64,6 +70,10 @@ __all__ = [
     "PersonProjectRelation",
     "Project",
     "ReplyDraft",
+    "ReplyMediaItem",
+    "ReplyMediaPackage",
+    "ReplyMediaExecutionBudget",
+    "ReplyMediaBudgetReservation",
     "ReplyTask",
     "Route",
     "TelegramBusinessConnection",

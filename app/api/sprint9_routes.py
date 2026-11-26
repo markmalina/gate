@@ -14,20 +14,16 @@ from sqlalchemy.sql.expression import cast as sql_cast
 
 from app.api import routes as legacy
 from app.api.deps import get_db_session
-from app.application.telegram_formatting import CAPTION_FORMAT_KEY, FORMAT_KEY
 from app.core.config import Settings, get_settings
 from app.models.domain import (
     AuditLog,
     Bot,
     Conversation,
-    ConversationStatus,
     GateEvent,
     Message,
     MessageDirection,
     ReplyDraft,
-    ReplyDraftStatus,
     ReplyTask,
-    ReplyTaskStatus,
     TelegramUpdate,
 )
 from app.services.telegram import TelegramClient
@@ -235,103 +231,7 @@ async def _send_approved_draft(
     admin_business_connection_id: str | None,
     draft_ref: str,
 ) -> str:
-    rows = await _find_reply_draft_rows_by_ref(session=session, draft_ref=draft_ref)
-    if not rows:
-        text = f"Draft not found: {draft_ref}"
-        await _send_admin_reply(
-            session=session,
-            telegram=telegram,
-            settings=settings,
-            bot=bot,
-            gate_event=gate_event,
-            chat_id=admin_chat_id,
-            business_connection_id=admin_business_connection_id,
-            text=text,
-            audit_action="reply_draft_send_not_found",
-            metadata={"draft_ref": draft_ref},
-        )
-        return text
-    if len(rows) > 1:
-        text = f"Draft reference is ambiguous: {draft_ref}"
-        await _send_admin_reply(
-            session=session,
-            telegram=telegram,
-            settings=settings,
-            bot=bot,
-            gate_event=gate_event,
-            chat_id=admin_chat_id,
-            business_connection_id=admin_business_connection_id,
-            text=text,
-            audit_action="reply_draft_send_ambiguous",
-            metadata={"draft_ref": draft_ref},
-        )
-        return text
-
-    draft, task, conversation = rows[0]
-    if (
-        FORMAT_KEY in (draft.prompt_context or {})
-        or CAPTION_FORMAT_KEY in (draft.prompt_context or {})
-    ):
-        return ("This draft requires its saved formatting preview "
-                "and hash confirmation through Gate MCP.")
-    sent_at = datetime.now(UTC)
-    client_send_result = await telegram.send_message(
-        chat_id=conversation.chat_id,
-        text=draft.draft_text,
-        business_connection_id=conversation.business_connection_id,
-    )
-    session.add(
-        Message(
-            bot_id=conversation.bot_id,
-            gate_event_id=gate_event.id,
-            direction=MessageDirection.OUTBOUND.value,
-            source="gate",
-            event_type="approved_draft_reply",
-            chat_id=conversation.chat_id,
-            sender_id=settings.telegram_bot_username,
-            recipient_id=conversation.chat_id,
-            text=draft.draft_text,
-            business_connection_id=conversation.business_connection_id,
-            payload=client_send_result,
-            sent_at=sent_at,
-        )
-    )
-    old_task_status = task.status
-    draft.status = ReplyDraftStatus.APPROVED.value
-    task.status = ReplyTaskStatus.REPLIED.value
-    task.due_at = None
-    conversation.status = ConversationStatus.REPLIED.value
-    conversation.requires_reply = False
-    conversation.last_outbound_at = sent_at
-    conversation.last_message_at = sent_at
-    session.add(
-        AuditLog(
-            actor="gate",
-            action="reply_draft_sent_from_telegram",
-            bot_id=conversation.bot_id,
-            gate_event_id=gate_event.id,
-            metadata_={
-                "draft_id": str(draft.id),
-                "task_id": str(task.id),
-                "from_task_status": old_task_status,
-                "to_task_status": task.status,
-            },
-        )
-    )
-    text = f"Draft sent: {str(draft.id)[:8]}\ntask: {str(task.id)[:8]}"
-    await _send_admin_reply(
-        session=session,
-        telegram=telegram,
-        settings=settings,
-        bot=bot,
-        gate_event=gate_event,
-        chat_id=admin_chat_id,
-        business_connection_id=admin_business_connection_id,
-        text=text,
-        audit_action="telegram_admin_console_send_sent",
-        metadata={"draft_id": str(draft.id), "task_id": str(task.id)},
-    )
-    return text
+    return "Use Gate MCP: read current context, prepare a snapshot-bound draft and confirm send."
 
 
 async def _find_reply_draft_rows_by_ref(

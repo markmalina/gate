@@ -11,13 +11,16 @@ import stat
 from pathlib import Path
 from uuid import UUID
 
+from app.application.dialog_snapshots import snapshot_matches
 from app.application.document_formats import DOCUMENT_TYPES, MAX_DOCUMENT_BYTES
 
 
 def upload_arguments(
     path: Path, task_id: UUID, *, caption: str = "", caption_format: str = "plain",
-    follow_up: bool = False,
+    follow_up: bool = False, expected_context_snapshot: str,
 ) -> dict[str, object]:
+    if not snapshot_matches(expected_context_snapshot, expected_context_snapshot):
+        raise ValueError("A snapshot from the reviewed Gate reply context is required")
     # Work supplies one owner-selected local path. No URL or server-local path fetch.
     if not path.is_absolute() or path.is_symlink():
         raise ValueError("An absolute selected regular file is required")
@@ -36,6 +39,7 @@ def upload_arguments(
         raise ValueError("Selected file changed while reading")
     return {
         "task_id": str(task_id), "filename": path.name, "media_type": mime,
+        "expected_context_snapshot": expected_context_snapshot,
         "content_base64": base64.b64encode(data).decode("ascii"),
         "expected_sha256": hashlib.sha256(data).hexdigest(),
         "caption": caption, "caption_format": caption_format, "follow_up": follow_up,
@@ -46,6 +50,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("file", type=Path)
     parser.add_argument("--task-id", type=UUID, required=True)
+    parser.add_argument("--expected-context-snapshot", required=True)
     parser.add_argument("--caption", default="")
     parser.add_argument("--caption-format", choices=["plain", "markdown"], default="plain")
     parser.add_argument("--follow-up", action="store_true")
@@ -53,8 +58,10 @@ def main() -> None:
     print(json.dumps(upload_arguments(
         args.file, args.task_id, caption=args.caption, caption_format=args.caption_format,
         follow_up=args.follow_up,
+        expected_context_snapshot=args.expected_context_snapshot,
     ), ensure_ascii=False))
 
 
 if __name__ == "__main__":
     main()
+

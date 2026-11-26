@@ -18,7 +18,7 @@ from app.infrastructure.watch_voice_github import (
     WatchVoiceError,
     transcript_parts,
 )
-from app.models.watch_voice import WatchVoiceCursor, WatchVoiceNote
+from app.models.watch_voice import WatchEarlyCursor, WatchVoiceCursor, WatchVoiceNote
 from app.worker import watch_voice as worker
 from app.worker.dropbox_calls import DropboxCallWorkerError
 from sqlalchemy import select, text
@@ -54,7 +54,11 @@ async def database(tmp_path):
         admin = None
         engine = create_async_engine("sqlite+aiosqlite:///" + str(tmp_path / "watch.sqlite"))
     async with engine.begin() as connection:
-        for table in (WatchVoiceCursor.__table__, WatchVoiceNote.__table__):
+        for table in (
+            WatchEarlyCursor.__table__,
+            WatchVoiceCursor.__table__,
+            WatchVoiceNote.__table__,
+        ):
             await connection.run_sync(table.create)
     try:
         yield async_sessionmaker(engine, expire_on_commit=False)
@@ -169,6 +173,7 @@ class World:
                 await self.downloader.download(command.voice)
                 assert command.reservation_key.startswith("watch-voice:")
                 assert command.connector_ref == "telegram_business"
+                await command.on_recognition_start(datetime.now(UTC))
                 world.provider_calls += 1
                 if world.transcription_error:
                     raise RuntimeError("synthetic uncertain provider")
@@ -245,6 +250,10 @@ def test_full_cycle_preserves_original_transcript_times_and_deduplicates(tmp_pat
             assert note.recorded_at is None
             assert note.dropbox_modified_at.date().isoformat() == "2026-10-05"
             assert note.transcript == world.transcript
+            assert (note.received_at == note.transcription_queued_at
+                    <= note.recognition_started_at <= note.text_saved_at)
+            assert note.attempted_at >= note.text_saved_at
+            assert note.transcription_stopped_at is None
             assert note.delivery_state == "delivered"
             assert note.issue_url == "https://github.com/markmalina/mark/issues/101"
             assert note.github_received_at.date().isoformat() == "2026-10-05"
@@ -317,7 +326,11 @@ def test_unknown_provider_is_not_repeated(tmp_path, monkeypatch):
             async with httpx.AsyncClient(transport=httpx.MockTransport(world.handle)) as http:
                 await worker.process_watch_voice(settings(), factory, http)
                 await worker.process_watch_voice(settings(), factory, http)
-            assert (await notes(factory))[0].transcription_state == "unknown"
+            note = (await notes(factory))[0]
+            assert note.transcription_state == "unknown"
+            assert note.received_at <= note.recognition_started_at <= note.transcription_stopped_at
+            assert note.transcription_stop_reason == "watch_voice_transcription_unknown"
+            assert note.text_saved_at is None
             assert world.provider_calls == 1 and world.posts == 0
 
     asyncio.run(run())
@@ -539,7 +552,8 @@ def test_exact_rollout_does_not_process_preexisting_other_note(tmp_path, monkeyp
 
 
 def test_gate_original_receipt_and_foreign_scope_denial(tmp_path, monkeypatch):
-    from app.api import mcp_routes
+    from app.api import mcp_audio_archive
+    from app.models.domain import UNCLASSIFIED_PROJECT_ID
 
     world = World()
     world.patches(monkeypatch)
@@ -552,11 +566,11 @@ def test_gate_original_receipt_and_foreign_scope_denial(tmp_path, monkeypatch):
             principal = SimpleNamespace(
                 access_scope=SimpleNamespace(
                     workspace_id=settings().gate_workspace_id,
-                    project_ids={mcp_routes.UNCLASSIFIED_PROJECT_ID},
+                    project_ids={UNCLASSIFIED_PROJECT_ID},
                 )
             )
             async with factory() as session:
-                response = await mcp_routes._watch_voice_tool_result(
+                response = await mcp_audio_archive._watch_voice_tool_result(
                     request_id="test",
                     selector="watch-voice:" + row.id,
                     principal=principal,
@@ -566,7 +580,7 @@ def test_gate_original_receipt_and_foreign_scope_denial(tmp_path, monkeypatch):
                 payload = json.loads(response["result"]["content"][0]["text"])
                 assert payload["transcript"] == world.transcript
                 assert payload["audio_sha256"] == hashlib.sha256(world.audio).hexdigest()
-                response = await mcp_routes._watch_voice_tool_result(
+                response = await mcp_audio_archive._watch_voice_tool_result(
                     request_id="test",
                     selector="watch-voice-file:" + row.id,
                     principal=principal,
@@ -578,7 +592,7 @@ def test_gate_original_receipt_and_foreign_scope_denial(tmp_path, monkeypatch):
                 assert base64.b64decode(original["data_base64"]) == world.audio
             principal.access_scope.workspace_id = "foreign"
             session = SimpleNamespace(scalar=AsyncMock())
-            denied = await mcp_routes._watch_voice_tool_result(
+            denied = await mcp_audio_archive._watch_voice_tool_result(
                 request_id="test",
                 selector="watch-voice-file:" + row.id,
                 principal=principal,
@@ -589,3 +603,12 @@ def test_gate_original_receipt_and_foreign_scope_denial(tmp_path, monkeypatch):
             session.scalar.assert_not_awaited()
 
     asyncio.run(run())
+
+
+def test_metadata_only_preflight_does_not_require_stt_credentials():
+    from pydantic import SecretStr
+
+    configured = settings().model_copy(update={"openai_api_key": SecretStr("")})
+    worker.validate_settings(configured, require_stt=False)
+    with pytest.raises(WatchVoiceError, match="watch_voice_transcription_key_missing"):
+        worker.validate_settings(configured)

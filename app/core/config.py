@@ -108,6 +108,12 @@ class Settings(BaseSettings):
     )
     gate_send_enabled: bool = Field(default=True, validation_alias="GATE_SEND_ENABLED")
     gate_rich_send_enabled: bool = Field(default=False, validation_alias="GATE_RICH_SEND_ENABLED")
+    gate_rich_media_send_enabled: bool = Field(
+        default=False, validation_alias="GATE_RICH_MEDIA_SEND_ENABLED"
+    )
+    gate_reply_media_send_enabled: bool = Field(
+        default=True, validation_alias="GATE_REPLY_MEDIA_SEND_ENABLED"
+    )
     gate_document_send_enabled: bool = Field(
         default=False, validation_alias="GATE_DOCUMENT_SEND_ENABLED"
     )
@@ -567,6 +573,38 @@ class Settings(BaseSettings):
     )
     gate_watch_voice_actions_enabled: bool = Field(
         default=False, validation_alias="GATE_WATCH_VOICE_MARK_OIDC_ENABLED"
+    )
+    gate_watch_webhook_enabled: bool = Field(
+        default=False, validation_alias="GATE_WATCH_WEBHOOK_ENABLED"
+    )
+    gate_watch_mark_updates_enabled: bool = Field(
+        default=False, validation_alias="GATE_WATCH_MARK_UPDATES_ENABLED"
+    )
+    gate_watch_mark_backfill_event_ids: SecretStr = Field(
+        default=SecretStr(""), repr=False, validation_alias="GATE_WATCH_MARK_BACKFILL_EVENT_IDS"
+    )
+    gate_watch_webhook_archive_enabled: bool = Field(
+        default=False, validation_alias="GATE_WATCH_WEBHOOK_ARCHIVE_ENABLED"
+    )
+    gate_watch_webhook_transcription_admission: SecretStr = Field(
+        default=SecretStr(""),
+        repr=False,
+        validation_alias="GATE_WATCH_WEBHOOK_TRANSCRIPTION_ADMISSION",
+    )
+    gate_watch_gpt_transcribe_canary: SecretStr = Field(
+        default=SecretStr(""), repr=False, validation_alias="GATE_WATCH_GPT_TRANSCRIBE_CANARY",
+    )
+    gate_watch_voice_early_cards_only: bool = Field(
+        default=False, validation_alias="GATE_WATCH_VOICE_EARLY_CARDS_ONLY"
+    )
+    gate_watch_voice_early_batch_size: int = Field(
+        default=1, ge=1, le=5, validation_alias="GATE_WATCH_VOICE_EARLY_BATCH_SIZE"
+    )
+    gate_watch_voice_w1_enabled: bool = Field(
+        default=False, validation_alias="GATE_WATCH_VOICE_W1_ENABLED"
+    )
+    gate_watch_voice_w1_admission: SecretStr = Field(
+        default=SecretStr(""), repr=False, validation_alias="GATE_WATCH_VOICE_W1_ADMISSION"
     )
     gate_watch_voice_actions_workflow_sha256: str = Field(
         default="",

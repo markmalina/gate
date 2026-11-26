@@ -1,0 +1,73 @@
+{
+  "schema_version": "gate.synthetic-media-fixtures.v1",
+  "issue": 742,
+  "generator": "scripts/generate_media_sprint2_fixtures.py",
+  "image_source": "deterministic Pillow graphics; synthetic only; no model/provider calls",
+  "font": "DejaVuSans.ttf",
+  "font_sha256": "ae7b7855e115a5966d8b1b3f80f254ccc117ec86f9965e202ee2940453837280",
+  "pillow_version": "12.3.0",
+  "freetype_version": "2.14.3",
+  "zlib_version": "1.3.2",
+  "source_color_space": "sRGB (PNG sRGB rendering intent 0)",
+  "source_exif": false,
+  "normalized_hash_provenance": "app.application.reply_media._validate_image, local pinned environment",
+  "runtime_hash_rule": "Real prepare/preview transform version and output hash remain authoritative; compare before approval",
+  "items": [
+    {
+      "ordinal": 1,
+      "filename": "image-1.png",
+      "label": "Gate — тестовое изображение 1",
+      "background_srgb": "#075985",
+      "width": 800,
+      "height": 600,
+      "source_size_bytes": 9843,
+      "source_sha256": "7854c0a39468cff872f3fffde044a61a508ae5cdb4cb3ac8bd5324f07068305c",
+      "normalized_size_bytes": 9830,
+      "normalized_output_sha256": "882a4cb63d8a6dd829944298ebeef791c6322ce5dd72dc17f0fe694f312dbb4f",
+      "transform": "metadata_strip;orientation=1;colorspace=RGB;reencode",
+      "transform_version": "gate.image-normalize.v1;pillow-12.3.0"
+    },
+    {
+      "ordinal": 2,
+      "filename": "image-2.png",
+      "label": "Gate — тестовое изображение 2",
+      "background_srgb": "#9A3412",
+      "width": 800,
+      "height": 600,
+      "source_size_bytes": 13935,
+      "source_sha256": "31b6d3b4a3ba1732a43d9d3c00aa07fec4b69a933e8bece19fae2ff8455b8004",
+      "normalized_size_bytes": 13922,
+      "normalized_output_sha256": "0ff6265c9ff2be338bb6534ecc2566e64d9e0bac9e9f89e0e60f616168a2310e",
+      "transform": "metadata_strip;orientation=1;colorspace=RGB;reencode",
+      "transform_version": "gate.image-normalize.v1;pillow-12.3.0"
+    },
+    {
+      "ordinal": 3,
+      "filename": "image-3.png",
+      "label": "Gate — тестовое изображение 3",
+      "background_srgb": "#065F46",
+      "width": 800,
+      "height": 600,
+      "source_size_bytes": 13757,
+      "source_sha256": "b8031412c96ff7d3bb29180f4c23abee960356a0d80d5b242cbf8fb9375f567a",
+      "normalized_size_bytes": 13744,
+      "normalized_output_sha256": "0b0ab084ae438b45fbf995008ac5f78ff738365b691559e1d158b3dbae1df0b7",
+      "transform": "metadata_strip;orientation=1;colorspace=RGB;reencode",
+      "transform_version": "gate.image-normalize.v1;pillow-12.3.0"
+    },
+    {
+      "ordinal": 4,
+      "filename": "image-4.png",
+      "label": "Gate — тестовое изображение 4",
+      "background_srgb": "#6B21A8",
+      "width": 800,
+      "height": 600,
+      "source_size_bytes": 11593,
+      "source_sha256": "d21cd27384759005471fde50788c84ddff5d178000043b1d9bf18ec0329b43f8",
+      "normalized_size_bytes": 11580,
+      "normalized_output_sha256": "d19d445a5b03862f740068a59d0344dd5b6957844633dfe007d52a3c0aff9868",
+      "transform": "metadata_strip;orientation=1;colorspace=RGB;reencode",
+      "transform_version": "gate.image-normalize.v1;pillow-12.3.0"
+    }
+  ]
+}

@@ -13,17 +13,25 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import mcp_routes
+from app.api.audio_processing_history import (
+    AUDIO_PROCESSING_HISTORY_SCHEMA,
+    call_processing_history,
+    telegram_processing_history,
+)
 from app.api.deps import get_db_session
+from app.api.mcp_results import tool_error_result, tool_result
 from app.api.mcp_schemas import (
     ATTACHMENT_DETAILS_SCHEMA,
     COMMON_DEFINITIONS,
     CONTACT_DETAILS_SCHEMA,
     REPLY_CONTEXT_MESSAGE_SCHEMA,
+    REPLY_CONTEXT_ERROR_SCHEMA,
     REPLY_CONTEXT_SUCCESS_SCHEMA,
     VOICE_DETAILS_SCHEMA,
 )
 from app.api.routes import get_telegram_client
 from app.application.telegram_contacts import extract_scoped_telegram_contact
+from app.application.telegram_message_content import read_telegram_message_text
 from app.core.config import Settings, get_settings
 from app.core.mcp_oauth import McpOAuthError
 from app.models.domain import (
@@ -71,7 +79,10 @@ FEED_ITEM_SCHEMA: JsonObject = {
         },
         "semantic_status": {
             "type": "string",
-            "enum": ["source_ready", "transcript_pending"],
+            "enum": [
+                "source_ready", "transcript_pending", "no_text",
+                "source_unavailable", "processing_failed",
+            ],
         },
         "original_available": {"type": "boolean"},
         "transcript_status": {"type": ["string", "null"], "maxLength": 32},
@@ -83,6 +94,7 @@ FEED_ITEM_SCHEMA: JsonObject = {
             "type": ["string", "null"],
             "maxLength": 128,
         },
+        "processing_history": AUDIO_PROCESSING_HISTORY_SCHEMA,
     },
     "required": [
         "source_ref",
@@ -150,12 +162,7 @@ FEED_REPLY_CONTEXT_OUTPUT_SCHEMA: JsonObject = {
     "oneOf": [
         REPLY_CONTEXT_SUCCESS_SCHEMA,
         FEED_SUCCESS_SCHEMA,
-        {
-            "type": "object",
-            "properties": {"error": {"type": "string", "minLength": 1}},
-            "required": ["error"],
-            "additionalProperties": False,
-        },
+        REPLY_CONTEXT_ERROR_SCHEMA,
     ],
 }
 
@@ -163,7 +170,7 @@ FEED_REPLY_CONTEXT_OUTPUT_SCHEMA: JsonObject = {
 @router.post("/mcp")
 async def communication_feed_mcp_endpoint(
     request: Request,
-    payload: JsonObject,
+    payload: Annotated[JsonObject, Depends(mcp_routes._read_mcp_request)],
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     settings: Settings = settings_dependency,
     session: AsyncSession = db_session_dependency,
@@ -217,7 +224,7 @@ async def communication_feed_mcp_endpoint(
         feed_day = _parse_feed_day(arguments.get("task_id"))
         limit = _feed_limit(arguments.get("limit", 200))
     except ValueError as exc:
-        return mcp_routes._tool_error_result(
+        return tool_error_result(
             request_id=request_id,
             code="invalid_arguments",
             message=str(exc),
@@ -229,7 +236,7 @@ async def communication_feed_mcp_endpoint(
         feed_day=feed_day,
         limit=limit,
     )
-    return mcp_routes._tool_result(feed, _format_feed_text(feed), request_id)
+    return tool_result(feed, _format_feed_text(feed), request_id)
 
 
 async def _delegate(
@@ -264,7 +271,10 @@ def _decorate_tools_list(result: JsonObject) -> JsonObject:
             "Return one scoped reply context, or use feed:day:YYYY-MM-DD to read "
             "Mark's RU/BY Telegram text, voice transcripts and phone-call transcripts "
             "as one chronological owner-only source projection. For feed items, derive "
-            "concise meaning from semantic_input_private and never quote it by default."
+            "concise meaning from semantic_input_private and never quote it by default. "
+            "When preparing a reply, review the current dialog and its raw events. "
+            "Use context_snapshot from a fresh read with context_ready=true as "
+            "expected_context_snapshot when saving the draft."
         )
         properties = tool.get("inputSchema", {}).get("properties")
         if isinstance(properties, dict):
@@ -468,7 +478,10 @@ def _message_feed_item(
         business_connection_id=message.business_connection_id,
     )
     # Never put a contact's name, phone or vCard in the global feed.
-    semantic_input = "Получен контакт" if contact_card else _clean_text(message.text)
+    text, text_status = read_telegram_message_text(
+        message, telegram_update.payload if telegram_update is not None else None,
+    )
+    semantic_input = "Получен контакт" if contact_card else text
     return _feed_item(
         source_ref=f"telegram-message:{message.id}",
         occurred_at=occurred_at,
@@ -481,7 +494,7 @@ def _message_feed_item(
         semantic_input=semantic_input,
         summary=None,
         summary_status=None,
-        semantic_status="source_ready" if semantic_input else "transcript_pending",
+        semantic_status="source_ready" if semantic_input is not None else text_status,
         original_available=False,
         transcript_status=None,
         transcription_reason_code=None,
@@ -520,6 +533,7 @@ def _voice_feed_item(
         ),
         summary_reason_code=getattr(archive, "summary_reason_code", None),
         owner_timezone=owner_timezone,
+        processing_history=telegram_processing_history(archive),
     )
 
 
@@ -545,6 +559,7 @@ def _call_feed_item(recording: Any, owner_timezone: ZoneInfo) -> JsonObject:
         ),
         summary_reason_code=getattr(recording, "summary_reason_code", None),
         owner_timezone=owner_timezone,
+        processing_history=call_processing_history(recording),
     )
 
 
@@ -567,6 +582,7 @@ def _feed_item(
     transcription_reason_code: str | None,
     summary_reason_code: str | None,
     owner_timezone: ZoneInfo,
+    processing_history: JsonObject | None = None,
 ) -> JsonObject:
     return {
         "source_ref": source_ref,
@@ -598,6 +614,7 @@ def _feed_item(
         "transcript_status": transcript_status,
         "transcription_reason_code": transcription_reason_code,
         "summary_reason_code": summary_reason_code,
+        **({"processing_history": processing_history} if processing_history is not None else {}),
     }
 
 

@@ -4,7 +4,11 @@ Execution: `gate-696-v0b-work-contract-20261012T0557Z`. Product issue: #696.
 Architecture: PR #759 at `d9a2866603d835983fd80e40688ce1c355e17a51`.
 Baseline implementation: PR #761 at `3955eb0539c1b30bd0816a958ffc7127f768fcb3`.
 
-## Deliverable and boundaries
+The paragraphs below describe the October source baseline. For the November S1
+staging implementation and its actual-host acceptance procedure, see
+[the Work S1 runbook](../runbooks/MTPROTO_RU_WORK_S1.md).
+
+## Original deliverable and boundaries
 
 This package implements the durable Work-facing command boundary in source.
 It does not complete actual-host V0-B acceptance or restore MTProto.

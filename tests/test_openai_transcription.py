@@ -1,17 +1,114 @@
 """OpenAI transcription HTTP adapter remains explicit and dormant by default."""
 
 import logging
+import ssl
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from app.application.billing import UsageUnit
 from app.application.telegram_voice_transcription import (
     NormalizedVoice,
     TranscriptionProviderError,
 )
 from app.infrastructure.openai_transcription import (
+    WATCH_BENCHMARK_MAX_SECONDS,
+    WATCH_CANARY_MAX_SECONDS,
+    WATCH_CANARY_RESPONSE_MAX_BYTES,
     OpenAITranscriptionClient,
     OpenAITranscriptionConfig,
 )
+from app.infrastructure.openai_transcription_wif import (
+    MTLS_TRANSCRIPTIONS,
+    TranscriptionWorkloadIdentity,
+)
+
+
+@pytest.mark.anyio
+async def test_watch_canary_with_missing_certificate_never_uses_api_key(monkeypatch) -> None:
+    request = AsyncMock(side_effect=AssertionError("Unexpected provider request"))
+    monkeypatch.setattr(
+        "app.infrastructure.openai_transcription.transcription_workload_identity",
+        lambda _: None,
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(request)) as http:
+        client = OpenAITranscriptionClient(
+            config=OpenAITranscriptionConfig(
+                api_key="synthetic", enabled=True, model="gpt-transcribe", watch_canary=True,
+            ),
+            http=http,
+        )
+        voice = NormalizedVoice(b"audio", "test.m4a", "audio/mp4")
+        with pytest.raises(
+            TranscriptionProviderError, match="workload_identity_unavailable",
+        ) as err:
+            await client.transcribe(voice, language="ru")
+    assert not err.value.outcome_unknown
+    request.assert_not_awaited()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("usage", [
+    {"type": "duration", "seconds": 2.43},
+    {"type": "duration", "seconds": 159.48},
+    {"type": "duration", "seconds": True},
+    {"type": "duration", "seconds": 31.01},
+    {"type": "tokens", "input_tokens": 100, "output_tokens": 20, "total_tokens": 120},
+    None,
+])
+async def test_watch_canary_settles_duration_via_certificate_only(monkeypatch, usage) -> None:
+    with pytest.raises(ValueError, match="model_unsupported"):
+        OpenAITranscriptionConfig(api_key="synthetic", enabled=True, model="gpt-transcribe")
+    requests = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if usage is None:
+            return httpx.Response(200, content=b"x" * (WATCH_CANARY_RESPONSE_MAX_BYTES + 1))
+        return httpx.Response(200, json={"text": " synthetic ", "usage": usage})
+
+    identity = TranscriptionWorkloadIdentity(ssl.create_default_context(), "test", "test")
+    is_benchmark = bool(usage and usage.get("seconds") == 159.48)
+    monkeypatch.setattr(identity, "_authorization", AsyncMock(return_value="synthetic-wif"))
+    monkeypatch.setattr(
+        "app.infrastructure.openai_transcription.transcription_workload_identity",
+        lambda _: identity,
+    )
+    async with httpx.AsyncClient() as unused_http:
+        wif_http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        monkeypatch.setattr(
+            "app.infrastructure.openai_transcription_wif.httpx.AsyncClient", lambda **_: wif_http,
+        )
+        client = OpenAITranscriptionClient(
+            config=OpenAITranscriptionConfig(
+                api_key="should-not-be-sent", enabled=True, model="gpt-transcribe",
+                watch_canary=True,
+                watch_canary_max_seconds=(
+                    WATCH_BENCHMARK_MAX_SECONDS if is_benchmark else WATCH_CANARY_MAX_SECONDS
+                ),
+            ),
+            http=unused_http,
+        )
+        voice = NormalizedVoice(b"audio", "watch.m4a", "audio/mp4")
+        if usage and usage.get("seconds") == 2.43:
+            result = await client.transcribe(voice, language="ru")
+            assert result.text == "synthetic"
+            assert result.billed_unit is UsageUnit.SECONDS
+            assert result.billed_quantity == 3
+            assert result.actual_microusd == 183
+        elif is_benchmark:
+            result = await client.transcribe(voice, language="ru")
+            assert result.billed_unit is UsageUnit.SECONDS
+            assert result.billed_quantity == 160
+            assert result.actual_microusd == 11_961
+        else:
+            with pytest.raises(TranscriptionProviderError) as failure:
+                await client.transcribe(voice, language="ru")
+            assert failure.value.outcome_unknown
+        assert len(requests) == 1
+        assert requests[0].url == MTLS_TRANSCRIPTIONS
+        assert requests[0].headers["authorization"] == "Bearer synthetic-wif"
+        assert b"gpt-transcribe" in requests[0].content
 
 
 @pytest.mark.anyio
@@ -467,3 +564,84 @@ async def test_empty_response_requires_known_usage(usage, valid):
                 await client.transcribe(voice, language="ru")
             assert caught.value.code == "openai_transcription_usage_unknown"
             assert caught.value.outcome_unknown
+
+
+@pytest.mark.anyio
+async def test_x509_exchange_is_pinned_and_audio_uses_the_short_lived_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import ssl
+
+    from app.infrastructure import openai_transcription_wif as wif
+
+    requests: list[httpx.Request] = []
+    async_client = httpx.AsyncClient
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if str(request.url) == wif.TOKEN_EXCHANGE:
+            assert "audio" not in request.content.decode()
+            assert "idp_gate" in request.content.decode()
+            assert "user_gate" in request.content.decode()
+            return httpx.Response(200, json={
+                "access_token": "temporary-gate-token",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+            })
+        assert str(request.url) == wif.MTLS_TRANSCRIPTIONS
+        assert request.headers["Authorization"] == "Bearer temporary-gate-token"
+        return httpx.Response(200, json={
+            "text": "gate test",
+            "usage": {"type": "tokens", "input_tokens": 5, "output_tokens": 2, "total_tokens": 7},
+        })
+
+    context = ssl.create_default_context()
+
+    def make_client(**kwargs: object) -> httpx.AsyncClient:
+        assert kwargs == {"verify": context, "trust_env": False, "follow_redirects": False}
+        return async_client(transport=httpx.MockTransport(handler), follow_redirects=False)
+
+    identity = wif.TranscriptionWorkloadIdentity(context, "idp_gate", "user_gate")
+    monkeypatch.setenv("OPENAI_TRANSCRIPTION_WIF_ENABLED", "true")
+    monkeypatch.setattr(wif, "_identity", identity)
+    monkeypatch.setattr(wif.httpx, "AsyncClient", make_client)
+
+    async with async_client() as http:
+        adapter = OpenAITranscriptionClient(
+            config=OpenAITranscriptionConfig(api_key="legacy-key", enabled=True),
+            http=http,
+        )
+        voice = NormalizedVoice(b"wav", "voice.wav", "audio/wav")
+        for _ in range(2):
+            transcript = await adapter.transcribe(voice, language="en")
+            assert transcript.text == "gate test"
+
+    assert [str(item.url) for item in requests] == [
+        wif.TOKEN_EXCHANGE, wif.MTLS_TRANSCRIPTIONS, wif.MTLS_TRANSCRIPTIONS
+    ]
+    assert "Authorization" not in requests[0].headers
+
+
+@pytest.mark.anyio
+async def test_configured_x509_missing_credentials_never_uses_the_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.infrastructure import openai_transcription_wif as wif
+
+    async def reject_fallback(_: httpx.Request) -> httpx.Response:
+        pytest.fail("A request using the fallback API key was sent.")
+
+    monkeypatch.setenv("OPENAI_TRANSCRIPTION_WIF_ENABLED", "true")
+    monkeypatch.delenv("OPENAI_TRANSCRIPTION_WIF_KEY_PEM", raising=False)
+    monkeypatch.setattr(wif, "_identity", None)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(reject_fallback)) as http:
+        adapter = OpenAITranscriptionClient(
+            config=OpenAITranscriptionConfig(api_key="legacy-key", enabled=True),
+            http=http,
+        )
+        with pytest.raises(
+            TranscriptionProviderError, match="openai_transcription_workload_identity_unavailable"
+        ):
+            await adapter.transcribe(
+                NormalizedVoice(b"wav", "voice.wav", "audio/wav"), language=None
+            )

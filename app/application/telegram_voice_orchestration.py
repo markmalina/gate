@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Protocol
 
 from app.application.telegram_voice_transcription import (
+    DownloadedVoice,
     TelegramVoiceOutcome,
     TelegramVoiceTranscriptionResult,
     TelegramVoiceTranscriptionService,
@@ -39,6 +41,10 @@ class ProcessTelegramVoiceUpdateCommand:
     occurred_at: datetime
     language: str | None = None
     enabled: bool = False
+    archived_audio: DownloadedVoice | None = field(default=None, repr=False)
+    on_recognition_start: Callable[[datetime], Awaitable[None]] | None = field(
+        default=None, repr=False,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +108,8 @@ class ProcessTelegramVoiceUpdateService:
                 occurred_at=command.occurred_at,
                 language=command.language,
                 enabled=command.enabled,
+                archived_audio=command.archived_audio,
+                on_recognition_start=command.on_recognition_start,
             )
         )
         if transcription.outcome is TelegramVoiceOutcome.TRANSCRIBED:

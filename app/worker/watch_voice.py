@@ -27,6 +27,8 @@ from app.application.telegram_voice_transcription import (
 from app.core.config import Settings
 from app.infrastructure.billing_budget import SqlBillingBudgetService
 from app.infrastructure.openai_transcription import (
+    WATCH_CANARY_MAX_SECONDS,
+    WATCH_CANARY_MODEL,
     OpenAITranscriptionClient,
     OpenAITranscriptionConfig,
 )
@@ -38,7 +40,7 @@ from app.infrastructure.watch_voice_github import (
     marker,
     transcript_parts,
 )
-from app.models.watch_voice import WatchVoiceCursor, WatchVoiceNote
+from app.models.watch_voice import WatchVoiceCursor, WatchVoiceNote, next_mark_publish_version
 from app.worker.dropbox_calls import (
     _audio_media_type,
     _download_revision,
@@ -53,7 +55,7 @@ MAX_DURATION = 60 * 60
 logger = logging.getLogger(__name__)
 
 
-def validate_settings(settings: Settings) -> None:
+def validate_settings(settings: Settings, *, require_stt: bool = True) -> None:
     if not settings.gate_watch_voice_data_gate_approved:
         raise WatchVoiceError("watch_voice_data_gate_required")
     if (
@@ -68,13 +70,14 @@ def validate_settings(settings: Settings) -> None:
         or not settings.dropbox_call_account_id
     ):
         raise WatchVoiceError("watch_voice_dropbox_credentials_missing")
-    if not settings.openai_api_key.get_secret_value():
-        raise WatchVoiceError("watch_voice_transcription_key_missing")
-    if (
-        settings.openai_api_base_url.rstrip("/") != "https://api.openai.com/v1"
-        or settings.gate_telegram_voice_transcription_model != "gpt-4o-mini-transcribe"
-    ):
-        raise WatchVoiceError("watch_voice_pinned_provider_mismatch")
+    if require_stt:
+        if not settings.openai_api_key.get_secret_value():
+            raise WatchVoiceError("watch_voice_transcription_key_missing")
+        if (
+            settings.openai_api_base_url.rstrip("/") != "https://api.openai.com/v1"
+            or settings.gate_telegram_voice_transcription_model != "gpt-4o-mini-transcribe"
+        ):
+            raise WatchVoiceError("watch_voice_pinned_provider_mismatch")
     if (
         not settings.gate_mark_github_token.get_secret_value()
         or not settings.gate_mark_github_writer
@@ -120,12 +123,12 @@ def timestamp(value: str) -> datetime:
     return result.astimezone(UTC)
 
 
-def note_scope(settings: Settings) -> tuple[Any, ...]:
+def note_scope(settings: Settings, *, ignore_legacy_selector: bool = False) -> tuple[Any, ...]:
     scope: tuple[Any, ...] = (
         WatchVoiceNote.workspace_key == settings.gate_workspace_id,
         WatchVoiceNote.account_id == settings.dropbox_call_account_id,
     )
-    if settings.gate_watch_voice_file_id:
+    if not ignore_legacy_selector and settings.gate_watch_voice_file_id:
         scope += (
             WatchVoiceNote.file_id == settings.gate_watch_voice_file_id,
             WatchVoiceNote.revision == settings.gate_watch_voice_revision,
@@ -163,6 +166,8 @@ async def store_entry(
     http: httpx.AsyncClient,
     token: str,
     entry: dict[str, Any],
+    *,
+    webhook_archived: bool = False,
 ) -> None:
     file_id, revision = entry["id"], entry["rev"]
     scope = (settings.gate_workspace_id, settings.dropbox_call_account_id)
@@ -196,13 +201,20 @@ async def store_entry(
         recorded_at=None,
         dropbox_modified_at=modified,
         received_at=now,
+        transcription_queued_at=now,
         transcription_state="received",
+        webhook_archived=webhook_archived,
+        mark_publish_version=int(
+            webhook_archived and getattr(settings, "gate_watch_mark_updates_enabled", False)
+        ),
         delivery_state="pending",
         next_part=0,
     )
     if duration is None or duration > MAX_DURATION:
         row.transcription_state = "rejected"
         row.last_error = "watch_voice_media_unreadable_or_duration_exceeded"
+        row.transcription_queued_at = None
+        row.record_processing_result(now, reason=row.last_error)
     async with factory() as session:
         session.add(row)
         try:
@@ -238,23 +250,46 @@ async def transcribe_note(
     factory: async_sessionmaker[AsyncSession],
     http: httpx.AsyncClient,
     note_id: str,
+    *,
+    ignore_legacy_selector: bool = False,
+    canary_max_seconds: int | None = None,
+    mark_wake: asyncio.Event | None = None,
 ) -> None:
+    if canary_max_seconds is not None and not ignore_legacy_selector:
+        raise ValueError("watch_model_canary_requires_webhook")
     async with factory() as session:
         claimed = await session.execute(
             update(WatchVoiceNote)
             .where(
                 WatchVoiceNote.id == note_id,
-                *note_scope(settings),
+                *note_scope(settings, ignore_legacy_selector=ignore_legacy_selector),
                 WatchVoiceNote.transcription_state == "received",
             )
-            .values(transcription_state="processing", attempted_at=datetime.now(UTC))
+            .values(
+                transcription_state="processing",
+                attempted_at=datetime.now(UTC),
+                mark_publish_version=next_mark_publish_version(),
+            )
         )
         await session.commit()
         if not claimed.rowcount:  # type: ignore[attr-defined]
             return
+        if mark_wake is not None:
+            mark_wake.set()
         note = await session.get(WatchVoiceNote, note_id)
         assert note is not None
-    await transcribe_claimed_note(settings, factory, http, note)
+    if ignore_legacy_selector and note.attempted_at is not None:
+        received = note.received_at
+        started = note.attempted_at
+        if received.tzinfo is None or started.tzinfo is None:
+            received, started = received.replace(tzinfo=UTC), started.replace(tzinfo=UTC)
+        logger.info(
+            "Watch Gate transcription started archive_to_claim_ms=%d",
+            round((started - received).total_seconds() * 1000),
+        )
+    await transcribe_claimed_note(
+        settings, factory, http, note, canary_max_seconds=canary_max_seconds, mark_wake=mark_wake,
+    )
 
 
 class RecoveryVoiceNormalizer(TelegramVoiceNormalizer):
@@ -273,15 +308,45 @@ async def transcribe_claimed_note(
     *,
     recovery: bool = False,
     post_payment: bool = False,
+    canary_max_seconds: int | None = None,
+    mark_wake: asyncio.Event | None = None,
 ) -> None:
     """Only callers with a committed normal/recovery claim may enter this boundary."""
     assert note.duration_seconds is not None
     if post_payment and not recovery:
         raise ValueError("watch_voice_post_payment_recovery_required")
-    model = "gpt-4o-transcribe" if recovery else settings.gate_telegram_voice_transcription_model
+    if canary_max_seconds is not None and recovery:
+        raise ValueError("watch_model_canary_recovery_forbidden")
+    model = settings.gate_telegram_voice_transcription_model
+    if canary_max_seconds is not None:
+        model = WATCH_CANARY_MODEL
+    elif recovery:
+        model = "gpt-4o-transcribe"
     received = note.received_at
     if received.tzinfo is None:  # SQLite fixtures store the UTC value without its offset.
         received = received.replace(tzinfo=UTC)
+    claimed_note = (
+        WatchVoiceNote.id == note.id,
+        WatchVoiceNote.transcription_state == "processing",
+        WatchVoiceNote.attempted_at == note.attempted_at,
+    )
+
+    async def mark_recognition_started(at: datetime) -> None:
+        async with factory.begin() as session:
+            started = await session.scalar(
+                update(WatchVoiceNote)
+                .where(*claimed_note, WatchVoiceNote.recognition_started_at.is_(None))
+                .values(
+                    recognition_started_at=at,
+                    mark_publish_version=next_mark_publish_version(),
+                )
+                .returning(WatchVoiceNote.id)
+            )
+            if started is None:
+                raise WatchVoiceError("watch_voice_recognition_claim_lost")
+        if mark_wake is not None:
+            mark_wake.set()
+
     service = TelegramVoiceTranscriptionService(
         downloader=StoredVoice(note),
         normalizer=RecoveryVoiceNormalizer() if recovery else TelegramVoiceNormalizer(),
@@ -292,6 +357,8 @@ async def transcribe_claimed_note(
                 enabled=True,
                 model=model,
                 base_url=settings.openai_api_base_url,
+                watch_canary=canary_max_seconds is not None,
+                watch_canary_max_seconds=canary_max_seconds or WATCH_CANARY_MAX_SECONDS,
             ),
             http=http,
         ),
@@ -318,35 +385,54 @@ async def transcribe_claimed_note(
                 occurred_at=received,
                 language="ru",
                 enabled=True,
+                on_recognition_start=mark_recognition_started,
             )
         )
-    except asyncio.CancelledError:
-        raise
-    except Exception:
+    except (asyncio.CancelledError, Exception) as exc:
         # A provider might have accepted work. Never automatically call it a second time.
+        reason = (
+            "watch_voice_recognition_interrupted" if isinstance(exc, asyncio.CancelledError)
+            else "watch_voice_transcription_unknown"
+        )
         async with factory() as session:
             await session.execute(
                 update(WatchVoiceNote)
-                .where(WatchVoiceNote.id == note.id)
+                .where(*claimed_note)
                 .values(
-                    transcription_state="unknown", last_error="watch_voice_transcription_unknown"
+                    transcription_state="unknown",
+                    last_error=reason,
+                    transcription_stopped_at=datetime.now(UTC),
+                    transcription_stop_reason=reason,
+                    mark_publish_version=next_mark_publish_version(),
                 )
             )
             await session.commit()
+        if mark_wake is not None:
+            mark_wake.set()
+        if isinstance(exc, asyncio.CancelledError):
+            raise
         return
+    finished_at = datetime.now(UTC)
+    has_text = result.outcome == TelegramVoiceOutcome.TRANSCRIBED
     async with factory() as session:
         await session.execute(
             update(WatchVoiceNote)
-            .where(WatchVoiceNote.id == note.id)
+            .where(*claimed_note)
             .values(
                 transcription_state=result.outcome.value,
                 transcript=result.alpha_input_text,
                 model=model,
-                transcribed_at=datetime.now(UTC),
+                transcribed_at=finished_at,
                 last_error=result.reason_code,
+                text_saved_at=finished_at if has_text else None,
+                transcription_stopped_at=None if has_text else finished_at,
+                transcription_stop_reason=None if has_text else result.reason_code,
+                mark_publish_version=next_mark_publish_version(),
             )
         )
         await session.commit()
+    if mark_wake is not None:
+        mark_wake.set()
 
 
 async def publish_note(
@@ -534,7 +620,12 @@ async def process_watch_voice(
                     WatchVoiceNote.attempted_at < stale,
                     WatchVoiceNote.transcription_state == "processing",
                 )
-                .values(transcription_state="unknown", last_error="watch_voice_stale_transcription")
+                .values(
+                    transcription_state="unknown",
+                    last_error="watch_voice_stale_transcription",
+                    transcription_stopped_at=datetime.now(UTC),
+                    transcription_stop_reason="watch_voice_stale_transcription",
+                )
             )
             await session.execute(
                 update(WatchVoiceNote)

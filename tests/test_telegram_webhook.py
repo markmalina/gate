@@ -495,6 +495,50 @@ async def test_business_message_passes_business_connection_id(
 
 
 @pytest.mark.anyio
+async def test_new_outbound_business_rich_text_is_persisted_without_command_effects(
+    webhook_context: tuple[FakeSession, FakeTelegramClient],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, telegram_client = webhook_context
+    monkeypatch.setenv("GATE_ACCOUNT_RU_BUSINESS_CONNECTION_ID", "bc-1")
+
+    async def owner_identities(**kwargs: Any) -> set[str]:
+        return {"111"}
+
+    monkeypatch.setattr(
+        "app.api.sprint14_routes._find_receiving_account_identity_ids", owner_identities
+    )
+    update = {
+        "update_id": 101,
+        "business_message": {
+            "message_id": 11, "business_connection_id": "bc-1", "date": 1,
+            "from": {"id": 111, "is_bot": False}, "chat": {"id": 333, "type": "private"},
+            "rich_message": {"blocks": [
+                {"type": "paragraph", "text": "First paragraph"},
+                {"type": "paragraph", "text": ["Second ", {"type": "bold", "text": "line"}]},
+            ]},
+        },
+    }
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/telegram/webhook",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+            json=update,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["send_status"] == "observed_outbound"
+    message, = (item for item in session.objects if isinstance(item, Message))
+    event, = (item for item in session.objects if isinstance(item, GateEvent))
+    raw, = (item for item in session.objects if isinstance(item, TelegramUpdate))
+    assert message.direction == MessageDirection.OUTBOUND.value
+    assert message.text == event.text == "First paragraph\n\nSecond line"
+    assert raw.payload == event.payload == update
+    assert not any(isinstance(item, ReplyTask) for item in session.objects)
+    assert telegram_client.calls == []
+
+
+@pytest.mark.anyio
 async def test_business_connection_update_is_persisted_without_auto_reply(
     webhook_context: tuple[FakeSession, FakeTelegramClient],
     monkeypatch: pytest.MonkeyPatch,

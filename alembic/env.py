@@ -27,6 +27,8 @@ from app.models import (  # noqa: F401
     watch_voice,
 )
 from app.models.domain import Base
+from app.personal_telegram.command_store import PersonalRuntimeBase
+from app.personal_telegram.grant_registry import RuntimeGrantRow  # noqa: F401
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
@@ -36,7 +38,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-target_metadata = Base.metadata
+target_metadata = [Base.metadata, PersonalRuntimeBase.metadata]
 
 
 def get_url() -> str:

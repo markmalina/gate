@@ -13,6 +13,7 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from app.application.telegram_voice_transcription import TelegramVoiceOutcome
 from app.core.config import Settings
+from app.models.domain import PhoneCallRecording
 from app.worker import dropbox_calls
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -30,7 +31,7 @@ def anyio_backend():
     ("processing", "dropbox_call_processing_v15"),
 ])
 def test_recovery_and_restart_keep_same_new_reservation(monkeypatch, status, reason):
-    recording = SimpleNamespace(
+    recording = PhoneCallRecording(
         id=UUID("050409d7-4e44-4df6-896f-c5023ced70ae"),
         transcription_status=status, transcription_reason_code=reason,
         duration_seconds=2321, received_at=datetime(2026, 7, 26, tzinfo=UTC),
@@ -48,6 +49,9 @@ def test_recovery_and_restart_keep_same_new_reservation(monkeypatch, status, rea
 
         async def scalar(self, statement):
             compiled = str(statement)
+            if "FROM billing_budget_reservations" in compiled:
+                # This recovery run was interrupted before any paid claim.
+                return None
             assert "FOR UPDATE" in compiled
             return recording
 

@@ -103,11 +103,12 @@ OAuth with the Auth0 application credentials. Then verify, in order:
 2. Login requests only `gate:status:read`, `gate:inbox:read`, `gate:drafts:write`, and `gate:messages:send`.
 3. `gate_get_status` succeeds.
 4. `gate_list_unanswered` returns only explicitly granted account/project data and labels every item `RU` or `BY`.
-5. `gate_get_reply_context` returns the same account label, recipient and recent chronological history.
-6. `gate_save_reply_draft` saves a draft, reports `sent=false`, and returns the account and recipient confirmation fields.
+5. A fresh `gate_get_reply_context` returns the dialog, account, recipient and `context_snapshot`. Review the messages and raw events and require `context_ready=true`.
+6. Pass that snapshot as `expected_context_snapshot` to `gate_save_reply_draft`. The saved draft reports `sent=false` and returns the account and recipient confirmation fields.
 7. Before `gate_send_approved_reply`, ChatGPT shows Mark the final text, `RU`/`BY` account and recipient, then waits for explicit confirmation.
-8. The first confirmed send creates one `send_attempts` record and one Telegram call. Repeating the same tool call returns the existing attempt without another Telegram call.
-9. A Telegram timeout returns `status=unknown`; do not retry that draft automatically.
+8. When Gate accepts a new dialog event before final admission, the old draft returns `context_changed` and `sent=false`. Show the result in the requesting Work: «Не отправлено. Пока готовился ответ, диалог изменился.» A fresh draft needs a fresh review and approval.
+9. An unchanged, explicitly approved draft makes one Telegram send. Repeating the same tool call returns the existing attempt without another Telegram send.
+10. A Telegram timeout returns `status=unknown`. Report the uncertainty in the requesting Work and wait for reconciliation.
 
 ## Rollback
 

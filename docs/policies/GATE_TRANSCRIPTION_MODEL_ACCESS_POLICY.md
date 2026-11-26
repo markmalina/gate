@@ -1,6 +1,7 @@
 # Gate transcription model-access policy
 
-Version: `gate-transcription-model-access-v2`  
+Version: `gate-transcription-model-access-v3`
+
 Feature: bounded server-side voice and Dropbox phone-call transcription  
 Status: owner-approved implementation and exact-call Production processing policy
 
@@ -16,6 +17,28 @@ server-side `OPENAI_API_KEY` and one of these immutable models:
 The provider, endpoint and model allowlist are application-owned. User input
 cannot select them. No tools, Responses conversation, provider memory,
 background mode, file object, search, shell, MCP or automatic retry is allowed.
+
+### Production X.509 workload identity
+
+On 2026-11-21 Mark authorized certificate authentication for the existing Gate
+Production project. The ordinary credential and endpoint remain available
+when the certificate option is off, including for rollback.
+
+When `OPENAI_TRANSCRIPTION_WIF_ENABLED=true`, the two bounded OpenAI
+transcription adapters use `https://mtls.auth.openai.com/oauth/token` for
+identity exchange without audio and send audio only to
+`https://mtls.api.openai.com/v1/audio/transcriptions`. Both calls verify
+the OpenAI server and present the same Gate client certificate.
+The mapping is limited to the project service account and Audio API requests.
+The service cannot fall back to an API key when certificate mode is enabled.
+
+Configure `OPENAI_TRANSCRIPTION_WIF_PROVIDER_ID` and
+`OPENAI_TRANSCRIPTION_WIF_SERVICE_ACCOUNT_ID` on the Gate service.
+Keep `OPENAI_TRANSCRIPTION_WIF_KEY_PEM` and its corresponding
+`OPENAI_TRANSCRIPTION_WIF_CERT_PEM` in the service's protected configuration.
+Rotate before certificate expiry. Disable project certificate enforcement and
+disable the opt-in together when reverting to the previous configuration.
+The model and existing admission, retention, and settlement rules still apply.
 
 ## Input, output and call bounds
 
@@ -233,3 +256,72 @@ the watermark before download and excludes stored notes whose Dropbox timestamp
 is not later, even when Gate received them after cutover. Replays do not move
 the watermark; excluded delta pages still advance the existing cursor. No
 historical backfill or additional automation is authorized by this addition.
+
+
+## Owner Watch transcription in Gate — 2026-11-22
+
+The owner approved the Watch-only event path: authenticated Dropbox
+`/Alpha/Voice` → owner-scoped Gate archive → existing OpenAI X.509 speech
+service → transcript in protected Gate. It is default-off. This path uses the
+owner data-gate, the configured Dropbox account and workspace, the protected
+Gate archive, and an explicit server-side admission. It has no GitHub check or
+publication authority. The earlier rules for private Mark delivery continue
+to govern the separate paths that deliver there.
+
+The audio scope, endpoint, approved model, retention, shared USD 3 budget,
+part/timeout bounds and durable at-most-once claim remain those in this
+policy and `model-access.lock`. The initial admission is the first new
+owner-created short test recording after the configured UTC cutoff. It
+remains a single recording even after completion, rejection, or an uncertain
+effect. The owner will record a short non-sensitive phrase when readiness is
+confirmed. After acceptance, live admission selects later webhook-archived
+recordings and may separately name an exact approved backlog. No automatic
+provider retry or fallback is added.
+
+## GPT Transcribe one-recording Watch canary
+
+Gate #859 prepares a disabled-by-default canary for `gpt-transcribe`. Apply an
+exact owner release and recording grant before setting
+`GATE_WATCH_GPT_TRANSCRIBE_CANARY` as a separate protected JSON variable on
+the existing Watch live runtime. Its fields are an ISO-8601 UTC `after`, the exact synthetic filename
+`gate-gpt-transcribe-canary-<12 lowercase hex>.m4a` and its exact SHA-256.
+The first matching revision in the configured owner archive consumes the grant.
+Later revisions and replays cannot dispatch another request. The dedicated
+filename prefix is reserved by the Watch webhook worker, including with the
+canary variable unset. Other Watch records, Calls, Telegram and recovery use their existing
+allowlist. No live model switch or backlog operation is authorized here.
+
+Only the existing OpenAI certificate identity and fixed mTLS Audio
+Transcriptions endpoint are allowed. The source is at most 2,000,000 bytes and
+30 seconds, the response at most 262,144 bytes, with one normalized part, one
+60-second request, zero retries and no API-key fallback. The existing provider
+retention and data restrictions apply. Roll back by removing the canary grant
+after reviewing its terminal result. Do not reset or
+replay a claimed record or change the credential or provider configuration.
+
+The canary uses the existing monthly hard ceiling of USD 3 and single-part
+reservation floor of 5,000 micro-USD. Settle by provider-reported
+`usage.type=duration` with positive finite `seconds` at most 31 (one second of
+provider rounding margin), at USD 0.0045/minute. Round the micro-USD total and
+ledger seconds up separately. An invalid or unknown usage response stays
+unknown, with no repeat. Verify access, provider billing and these limits on
+one synthetic recording before any live model rollout.
+
+Sources checked 2026-11-22:
+https://developers.openai.com/api/docs/models/gpt-transcribe,
+https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create,
+https://developers.openai.com/api/docs/guides/your-data.
+
+### Exact public recording for a quality comparison
+
+The owner-requested comparison in Gate #859 uses one 159.48-second M4A
+derived from the public-domain 1908 phonograph recording by Leo Tolstoy.
+The locked SHA-256 in `watch_model_quality_benchmark` is the only input for
+which the source duration limit is 165 seconds and the reported-duration
+limit is 166 seconds. Activate only through the exact owner-approved canary
+grant. The destination, existing shared USD 3 budget, charge rate,
+response bounds, one-part, one-call and zero-retry rules are the same as the
+short canary. The OpenAI adapter rejects any additional parts before provider
+I/O. A normally admitted mini run on the same bytes is the comparison base.
+
+Source: https://commons.wikimedia.org/wiki/File:Tolstoy_Vremya_prishlo.ogg

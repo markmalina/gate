@@ -1,0 +1,727 @@
+{
+  "schema_version": "gate.audit.snapshot.v1",
+  "repository": "markmalina/gate",
+  "repository_id": 1293746267,
+  "source_sha": "86dbc0f429dce089bf733fc422f20f556535895b",
+  "source_tree": "7b5ddc0e6317fc475e2256953a69a07b109463dc",
+  "captured_on": "2026-10-19",
+  "audit_issue": 767,
+  "protocol_version": "2025-06-18",
+  "analysis": "static source composition; not dynamic runtime discovery",
+  "mount_order": [
+    "app/api/health_routes.py",
+    "app/api/contact_snapshot_routes.py",
+    "app/api/dropbox_call_routes.py",
+    "app/api/communication_feed_mcp.py",
+    "app/api/mcp_metadata_routes.py",
+    "app/api/mcp_transcription_routes.py",
+    "app/api/owner_one_off_transcription.py",
+    "app/api/alpha_admin_routes.py",
+    "app/api/beta_checkpoint_routes.py",
+    "app/api/watch_voice_routes.py",
+    "app/api/alpha_telegram_ingress.py",
+    "app/api/beta_telegram_ingress.py",
+    "app/api/become_telegram_ingress.py",
+    "app/api/telegram_ingress.py",
+    "app/api/sprint18b_draft_ux_routes.py",
+    "app/api/sprint17_send_draft_routes.py",
+    "app/api/sprint16d_clean_inbox_routes.py",
+    "app/api/sprint16_raw_routes.py",
+    "app/api/sprint15b_routes.py",
+    "app/api/sprint14b_routes.py",
+    "app/api/sprint14_routes.py",
+    "app/api/sprint11b_routes.py",
+    "app/api/sprint10_routes.py",
+    "app/api/sprint9_routes.py",
+    "app/api/sprint12_routes.py",
+    "app/api/routes.py"
+  ],
+  "registered_declarations": 46,
+  "first_match_routes": 34,
+  "routes": [
+    {
+      "module": "app/api/alpha_admin_routes.py",
+      "router": "router",
+      "method": "GET",
+      "path": "/admin/alpha/canary-status",
+      "path_expression": "\"/canary-status\"",
+      "line": 62,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/alpha_admin_routes.py"
+    },
+    {
+      "module": "app/api/alpha_admin_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/admin/alpha/model-preflight",
+      "path_expression": "\"/model-preflight\"",
+      "line": 152,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/alpha_admin_routes.py"
+    },
+    {
+      "module": "app/api/alpha_admin_routes.py",
+      "router": "router",
+      "method": "GET",
+      "path": "/admin/alpha/installations",
+      "path_expression": "\"/installations\"",
+      "line": 187,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/alpha_admin_routes.py"
+    },
+    {
+      "module": "app/api/alpha_admin_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/admin/alpha/installations/{installation_key}/approve",
+      "path_expression": "\"/installations/{installation_key}/approve\"",
+      "line": 205,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/alpha_admin_routes.py"
+    },
+    {
+      "module": "app/api/alpha_admin_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/admin/alpha/installations/{installation_key}/pause",
+      "path_expression": "\"/installations/{installation_key}/pause\"",
+      "line": 236,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/alpha_admin_routes.py"
+    },
+    {
+      "module": "app/api/alpha_admin_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/admin/alpha/installations/{installation_key}/revoke",
+      "path_expression": "\"/installations/{installation_key}/revoke\"",
+      "line": 256,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/alpha_admin_routes.py"
+    },
+    {
+      "module": "app/api/alpha_telegram_ingress.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/telegram/alpha/webhook",
+      "path_expression": "ALPHA_TELEGRAM_WEBHOOK_PATH",
+      "line": 41,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/alpha_telegram_ingress.py"
+    },
+    {
+      "module": "app/api/aqub_telegram.py",
+      "router": "router",
+      "method": "POST",
+      "path": null,
+      "path_expression": "AQUB_TELEGRAM_WEBHOOK_PATH",
+      "line": 146,
+      "composition": "unmounted_frozen"
+    },
+    {
+      "module": "app/api/aqub_telegram.py",
+      "router": "router",
+      "method": "POST",
+      "path": null,
+      "path_expression": "AQUB_GATE_DELIVERY_PATH",
+      "line": 281,
+      "composition": "unmounted_frozen"
+    },
+    {
+      "module": "app/api/become_telegram_ingress.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/telegram/become/webhook",
+      "path_expression": "BECOME_TELEGRAM_WEBHOOK_PATH",
+      "line": 31,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/become_telegram_ingress.py"
+    },
+    {
+      "module": "app/api/beta_checkpoint_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/internal/beta/checkpoints/next",
+      "path_expression": "\"/next\"",
+      "line": 88,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/beta_checkpoint_routes.py"
+    },
+    {
+      "module": "app/api/beta_checkpoint_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/internal/beta/checkpoints/ack",
+      "path_expression": "\"/ack\"",
+      "line": 135,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/beta_checkpoint_routes.py"
+    },
+    {
+      "module": "app/api/beta_telegram_ingress.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/telegram/beta/webhook",
+      "path_expression": "BETA_TELEGRAM_WEBHOOK_PATH",
+      "line": 99,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/beta_telegram_ingress.py"
+    },
+    {
+      "module": "app/api/communication_feed_mcp.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/mcp",
+      "path_expression": "\"/mcp\"",
+      "line": 163,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/communication_feed_mcp.py"
+    },
+    {
+      "module": "app/api/contact_snapshot_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/admin/contact-snapshots",
+      "path_expression": "\"/admin/contact-snapshots\"",
+      "line": 75,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/contact_snapshot_routes.py"
+    },
+    {
+      "module": "app/api/dropbox_call_routes.py",
+      "router": "router",
+      "method": "GET",
+      "path": "/dropbox/calls/webhook",
+      "path_expression": "\"/webhook\"",
+      "line": 21,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/dropbox_call_routes.py"
+    },
+    {
+      "module": "app/api/dropbox_call_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/dropbox/calls/webhook",
+      "path_expression": "\"/webhook\"",
+      "line": 34,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/dropbox_call_routes.py"
+    },
+    {
+      "module": "app/api/health_routes.py",
+      "router": "router",
+      "method": "GET",
+      "path": "/live",
+      "path_expression": "\"/live\"",
+      "line": 76,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/health_routes.py"
+    },
+    {
+      "module": "app/api/health_routes.py",
+      "router": "router",
+      "method": "GET",
+      "path": "/ready",
+      "path_expression": "\"/ready\"",
+      "line": 83,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/health_routes.py"
+    },
+    {
+      "module": "app/api/health_routes.py",
+      "router": "router",
+      "method": "GET",
+      "path": "/admin/ops/health",
+      "path_expression": "\"/admin/ops/health\"",
+      "line": 118,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/health_routes.py"
+    },
+    {
+      "module": "app/api/mcp_metadata_routes.py",
+      "router": "router",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource",
+      "path_expression": "\"/.well-known/oauth-protected-resource\"",
+      "line": 37,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/mcp_metadata_routes.py"
+    },
+    {
+      "module": "app/api/mcp_metadata_routes.py",
+      "router": "router",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/mcp",
+      "path_expression": "\"/.well-known/oauth-protected-resource/mcp\"",
+      "line": 55,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/mcp_metadata_routes.py"
+    },
+    {
+      "module": "app/api/mcp_metadata_routes.py",
+      "router": "router",
+      "method": "GET",
+      "path": "/mcp/metadata",
+      "path_expression": "\"/mcp/metadata\"",
+      "line": 72,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/mcp_metadata_routes.py"
+    },
+    {
+      "module": "app/api/mcp_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/mcp",
+      "path_expression": "\"/mcp\"",
+      "line": 261,
+      "composition": "delegated_core_not_direct_router"
+    },
+    {
+      "module": "app/api/mcp_transcription_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/mcp",
+      "path_expression": "\"/mcp\"",
+      "line": 65,
+      "composition": "registered",
+      "first_match": false,
+      "first_match_module": "app/api/communication_feed_mcp.py"
+    },
+    {
+      "module": "app/api/mcp_transcription_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/alpha/transcriptions/upload",
+      "path_expression": "\"/alpha/transcriptions/upload\"",
+      "line": 164,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/mcp_transcription_routes.py"
+    },
+    {
+      "module": "app/api/owner_one_off_transcription.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/ops/owner-one-off/transcription/2026-08-03-chunks",
+      "path_expression": "_PATH",
+      "line": 58,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/owner_one_off_transcription.py"
+    },
+    {
+      "module": "app/api/routes.py",
+      "router": "router",
+      "method": "GET",
+      "path": "/health",
+      "path_expression": "\"/health\"",
+      "line": 80,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/routes.py"
+    },
+    {
+      "module": "app/api/routes.py",
+      "router": "router",
+      "method": "GET",
+      "path": "/deployment/fingerprint",
+      "path_expression": "\"/deployment/fingerprint\"",
+      "line": 92,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/routes.py"
+    },
+    {
+      "module": "app/api/routes.py",
+      "router": "router",
+      "method": "GET",
+      "path": "/admin/events/recent",
+      "path_expression": "\"/admin/events/recent\"",
+      "line": 107,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/routes.py"
+    },
+    {
+      "module": "app/api/routes.py",
+      "router": "router",
+      "method": "GET",
+      "path": "/admin/audit/recent",
+      "path_expression": "\"/admin/audit/recent\"",
+      "line": 125,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/routes.py"
+    },
+    {
+      "module": "app/api/routes.py",
+      "router": "router",
+      "method": "GET",
+      "path": "/admin/status",
+      "path_expression": "\"/admin/status\"",
+      "line": 143,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/routes.py"
+    },
+    {
+      "module": "app/api/routes.py",
+      "router": "router",
+      "method": "GET",
+      "path": "/admin/inbox/unanswered",
+      "path_expression": "\"/admin/inbox/unanswered\"",
+      "line": 155,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/routes.py"
+    },
+    {
+      "module": "app/api/routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/telegram/webhook",
+      "path_expression": "\"/telegram/webhook\"",
+      "line": 168,
+      "composition": "registered",
+      "first_match": false,
+      "first_match_module": "app/api/telegram_ingress.py"
+    },
+    {
+      "module": "app/api/sprint10_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/telegram/webhook",
+      "path_expression": "\"/telegram/webhook\"",
+      "line": 42,
+      "composition": "registered",
+      "first_match": false,
+      "first_match_module": "app/api/telegram_ingress.py"
+    },
+    {
+      "module": "app/api/sprint10_routes.py",
+      "router": "router",
+      "method": "GET",
+      "path": "/admin/drafts/{draft_ref}/edit",
+      "path_expression": "\"/admin/drafts/{draft_ref}/edit\"",
+      "line": 132,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/sprint10_routes.py"
+    },
+    {
+      "module": "app/api/sprint10_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/admin/drafts/{draft_ref}/edit",
+      "path_expression": "\"/admin/drafts/{draft_ref}/edit\"",
+      "line": 148,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/sprint10_routes.py"
+    },
+    {
+      "module": "app/api/sprint11b_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/telegram/webhook",
+      "path_expression": "\"/telegram/webhook\"",
+      "line": 38,
+      "composition": "registered",
+      "first_match": false,
+      "first_match_module": "app/api/telegram_ingress.py"
+    },
+    {
+      "module": "app/api/sprint12_routes.py",
+      "router": "router",
+      "method": "GET",
+      "path": "/admin/drafts/{draft_ref}/web-edit",
+      "path_expression": "\"/admin/drafts/{draft_ref}/web-edit\"",
+      "line": 18,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/sprint12_routes.py"
+    },
+    {
+      "module": "app/api/sprint14_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/telegram/webhook",
+      "path_expression": "\"/telegram/webhook\"",
+      "line": 45,
+      "composition": "registered",
+      "first_match": false,
+      "first_match_module": "app/api/telegram_ingress.py"
+    },
+    {
+      "module": "app/api/sprint14b_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/telegram/webhook",
+      "path_expression": "\"/telegram/webhook\"",
+      "line": 53,
+      "composition": "registered",
+      "first_match": false,
+      "first_match_module": "app/api/telegram_ingress.py"
+    },
+    {
+      "module": "app/api/sprint15b_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/telegram/webhook",
+      "path_expression": "\"/telegram/webhook\"",
+      "line": 42,
+      "composition": "registered",
+      "first_match": false,
+      "first_match_module": "app/api/telegram_ingress.py"
+    },
+    {
+      "module": "app/api/sprint16_raw_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/telegram/webhook",
+      "path_expression": "\"/telegram/webhook\"",
+      "line": 30,
+      "composition": "registered",
+      "first_match": false,
+      "first_match_module": "app/api/telegram_ingress.py"
+    },
+    {
+      "module": "app/api/sprint16d_clean_inbox_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/telegram/webhook",
+      "path_expression": "\"/telegram/webhook\"",
+      "line": 40,
+      "composition": "registered",
+      "first_match": false,
+      "first_match_module": "app/api/telegram_ingress.py"
+    },
+    {
+      "module": "app/api/sprint17_send_draft_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/telegram/webhook",
+      "path_expression": "\"/telegram/webhook\"",
+      "line": 46,
+      "composition": "registered",
+      "first_match": false,
+      "first_match_module": "app/api/telegram_ingress.py"
+    },
+    {
+      "module": "app/api/sprint18b_draft_ux_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/telegram/webhook",
+      "path_expression": "\"/telegram/webhook\"",
+      "line": 36,
+      "composition": "registered",
+      "first_match": false,
+      "first_match_module": "app/api/telegram_ingress.py"
+    },
+    {
+      "module": "app/api/sprint9_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/telegram/webhook",
+      "path_expression": "\"/telegram/webhook\"",
+      "line": 43,
+      "composition": "registered",
+      "first_match": false,
+      "first_match_module": "app/api/telegram_ingress.py"
+    },
+    {
+      "module": "app/api/telegram_ingress.py",
+      "router": "durable_ingress_router",
+      "method": "POST",
+      "path": "/telegram/webhook",
+      "path_expression": "TELEGRAM_WEBHOOK_PATH",
+      "line": 66,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/telegram_ingress.py"
+    },
+    {
+      "module": "app/api/watch_voice_routes.py",
+      "router": "router",
+      "method": "POST",
+      "path": "/internal/watch-voice/drain",
+      "path_expression": "\"/drain\"",
+      "line": 27,
+      "composition": "registered",
+      "first_match": true,
+      "first_match_module": "app/api/watch_voice_routes.py"
+    }
+  ],
+  "core_tools": [
+    {
+      "name": "gate_get_status",
+      "scope": "gate:status:read",
+      "effect": "Scoped DB/status; не global census",
+      "http_reachable_by_source_composition": true
+    },
+    {
+      "name": "gate_list_unanswered",
+      "scope": "gate:inbox:read",
+      "effect": "Scoped inbox read",
+      "http_reachable_by_source_composition": true
+    },
+    {
+      "name": "gate_get_reply_context",
+      "scope": "gate:inbox:read",
+      "effect": "Context / attachments / voice; отдельные selectors могут читать media; feed использует stored facts",
+      "http_reachable_by_source_composition": true
+    },
+    {
+      "name": "gate_get_owner_reply_readiness",
+      "scope": "gate:inbox:read",
+      "effect": "Readiness projection, не отправка",
+      "http_reachable_by_source_composition": true
+    },
+    {
+      "name": "gate_save_reply_draft",
+      "scope": "gate:drafts:write",
+      "effect": "DB draft write",
+      "http_reachable_by_source_composition": true
+    },
+    {
+      "name": "gate_prepare_reply_document",
+      "scope": "gate:drafts:write",
+      "effect": "Document staging/write, не send",
+      "http_reachable_by_source_composition": true
+    },
+    {
+      "name": "gate_send_approved_reply",
+      "scope": "gate:messages:send",
+      "effect": "Telegram send после exact approval",
+      "http_reachable_by_source_composition": true
+    },
+    {
+      "name": "gate_send_approved_document",
+      "scope": "gate:messages:send",
+      "effect": "Telegram document send после exact approval",
+      "http_reachable_by_source_composition": true
+    },
+    {
+      "name": "gate_queue_approved_reply_sequence",
+      "scope": "gate:messages:send",
+      "effect": "Durable scheduling будущих sends",
+      "http_reachable_by_source_composition": true
+    },
+    {
+      "name": "gate_alpha_list_installations",
+      "scope": "gate:status:read",
+      "effect": "Scoped installation state",
+      "http_reachable_by_source_composition": true
+    },
+    {
+      "name": "gate_alpha_get_webhook_status",
+      "scope": "gate:status:read",
+      "effect": "Confirmed live Telegram webhook read",
+      "http_reachable_by_source_composition": true
+    },
+    {
+      "name": "gate_alpha_control_installation",
+      "scope": "gate:agents:manage",
+      "effect": "Lifecycle mutation; approval/pause/resume/revoke по allowed state",
+      "http_reachable_by_source_composition": true
+    },
+    {
+      "name": "gate_alpha_run_model_preflight",
+      "scope": "gate:agents:manage",
+      "effect": "Confirmed provider preflight; отдельный effect/data/cost scope",
+      "http_reachable_by_source_composition": true
+    },
+    {
+      "name": "gate_alpha_list_shadow_reviews",
+      "scope": "gate:agents:manage",
+      "effect": "Scoped review read; может содержать private candidate",
+      "http_reachable_by_source_composition": true
+    },
+    {
+      "name": "gate_alpha_get_test_group_presence",
+      "scope": "gate:agents:manage",
+      "effect": "Confirmed live presence probe, не send",
+      "http_reachable_by_source_composition": true
+    },
+    {
+      "name": "gate_alpha_send_review",
+      "scope": "gate:messages:send",
+      "effect": "Exact canary/review Telegram send",
+      "http_reachable_by_source_composition": true
+    },
+    {
+      "name": "gate_alpha_verify_review_replay",
+      "scope": "gate:status:read",
+      "effect": "Durable replay verification; не новый send",
+      "http_reachable_by_source_composition": true
+    },
+    {
+      "name": "gate_beta_export_space_checkpoint",
+      "scope": "gate:agents:manage",
+      "effect": "Confirmed encrypted checkpoint export; сверить durable side effects",
+      "http_reachable_by_source_composition": true
+    },
+    {
+      "name": "gate_beta_get_provider_probe",
+      "scope": "gate:agents:manage",
+      "effect": "Confirmed live Telegram identity/webhook diagnostic",
+      "http_reachable_by_source_composition": true
+    }
+  ],
+  "shadowed_transcription_tools": [
+    {
+      "name": "gate_alpha_create_transcription",
+      "scope": "gate:agents:manage",
+      "effect": "Dropbox stat и job write",
+      "http_reachable_by_source_composition": false
+    },
+    {
+      "name": "gate_alpha_get_transcription",
+      "scope": "gate:status:read",
+      "effect": "Workspace job read",
+      "http_reachable_by_source_composition": false
+    },
+    {
+      "name": "gate_alpha_list_transcriptions",
+      "scope": "gate:status:read",
+      "effect": "Workspace jobs read",
+      "http_reachable_by_source_composition": false
+    },
+    {
+      "name": "gate_alpha_get_transcription_artifact",
+      "scope": "gate:status:read",
+      "effect": "Private artifact read/download",
+      "http_reachable_by_source_composition": false
+    },
+    {
+      "name": "gate_alpha_retry_transcription",
+      "scope": "gate:agents:manage",
+      "effect": "Explicit failed-job successor attempt; потенциальный paid effect",
+      "http_reachable_by_source_composition": false
+    }
+  ],
+  "mcp_first_match": "app/api/communication_feed_mcp.py",
+  "mcp_delegate": "app/api/mcp_routes.py",
+  "mcp_shadowed": "app/api/mcp_transcription_routes.py"
+}

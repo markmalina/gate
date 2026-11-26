@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from app.api.mcp_routes import (
+from app.api.mcp_audio_archive import (
     _effective_phone_call_media_type,
     _parse_latest_call_selector,
 )
@@ -21,19 +21,21 @@ from app.application.telegram_voice_transcription import (
 )
 from app.core.config import Settings
 from app.infrastructure.telegram_voice import TelegramVoiceNormalizer
+from app.models.domain import PhoneCallRecording
 from app.worker.dropbox_calls import (
-    _CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND,
-    _CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
     DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES,
     DropboxCallWorkerError,
     _audio_media_type,
     _is_oversize_audio_file,
     _is_supported_file,
-    _mark_superseded_revisions,
     _probe_duration_seconds,
     _recover_duration_unknown_recordings,
     _resume_received_recordings,
     _validate_settings,
+)
+from app.worker.stored_audio import (
+    STORED_VOICE_BUDGET_CONNECTOR_REF,
+    STORED_VOICE_BUDGET_SCOPE_KIND,
 )
 
 
@@ -121,7 +123,7 @@ def test_dropbox_filter_accepts_bounded_audio_only() -> None:
     assert _is_supported_file({**entry, "size": 37_585_783}) is True
     oversize = {**entry, "size": DROPBOX_CALL_DOWNLOAD_LIMIT_BYTES + 1}
     assert _is_supported_file(oversize) is False
-    # The separate intake guard reports it instead of advancing the cursor.
+    # The intake worker records it separately without downloading it.
     assert _is_oversize_audio_file(oversize) is True
     assert _is_oversize_audio_file({**oversize, "name": "photo.jpg"}) is False
     assert _is_supported_file({**entry, ".tag": "deleted"}) is False
@@ -136,13 +138,13 @@ def test_dropbox_call_uses_existing_hard_limited_voice_budget() -> None:
             duration_seconds=3,
         ),
         workspace_key="mark-personal",
-        connector_ref=_CALL_TRANSCRIPTION_BUDGET_SCOPE_REF,
+        connector_ref=STORED_VOICE_BUDGET_CONNECTOR_REF,
         reservation_key="dropbox-call-v1:test",
         period_key="2026-07",
         requested_microusd=300,
         occurred_at=datetime.now(UTC),
         enabled=True,
-        budget_scope_kind=_CALL_TRANSCRIPTION_BUDGET_SCOPE_KIND,
+        budget_scope_kind=STORED_VOICE_BUDGET_SCOPE_KIND,
     )
 
     assert command.budget_scope_kind == "telegram_connector"
@@ -177,7 +179,7 @@ def test_m4a_media_type_is_deterministic_without_host_mime_tables(
         lambda _filename: (None, None),
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.mimetypes.guess_type",
+        "app.api.mcp_audio_archive.mimetypes.guess_type",
         lambda _filename: (None, None),
     )
 
@@ -406,7 +408,7 @@ def test_duration_recovery_never_replays_prior_provider_work(
     expected_status, expected_reason,
 ) -> None:
     data = b"synthetic audio"
-    row = SimpleNamespace(
+    row = PhoneCallRecording(
         id=uuid.uuid4(), workspace_key="mark-personal", source_account_id="account-id",
         source_file_id="id:exact", source_revision="revision-exact",
         transcription_status="rejected", transcription_reason_code=source_reason,
@@ -487,67 +489,3 @@ def test_probe_rejects_failed_decode_even_with_progress(monkeypatch) -> None:
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", create_process)
     assert asyncio.run(_probe_duration_seconds(b"corrupted audio")) is None
-
-
-@pytest.mark.parametrize("later_transcript_exists", [False, True])
-def test_unreadable_partial_revision_is_closed_only_after_final_transcript(
-    later_transcript_exists,
-) -> None:
-    row = SimpleNamespace(
-        id=uuid.uuid4(), workspace_key="mark-personal",
-        project_id=uuid.uuid4(), source_account_id="account-id",
-        source_file_id="id:stable", source_revision="partial-revision",
-        source_path="/Alpha/Calls/call.m4a", filename="call.m4a",
-        size_bytes=3_086_377, received_at=datetime.now(UTC),
-        transcription_status="rejected",
-        transcription_reason_code="dropbox_call_media_unreadable",
-        transcript_text=None,
-    )
-
-    class FakeSession:
-        def __init__(self):
-            self.lookups = 0
-            self.commits = 0
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            pass
-
-        async def scalars(self, _statement):
-            return SimpleNamespace(all=lambda: [row.id])
-
-        async def scalar(self, statement):
-            self.lookups += 1
-            if self.lookups == 1:
-                return row
-            query = str(statement)
-            for predicate in (
-                "source_file_id", "source_revision", "project_id",
-                "source_path", "filename", "size_bytes", "received_at",
-                "transcript_text",
-            ):
-                assert predicate in query
-            return uuid.uuid4() if later_transcript_exists else None
-
-        async def commit(self):
-            self.commits += 1
-
-    sessions = []
-
-    def factory():
-        session = FakeSession()
-        sessions.append(session)
-        return session
-
-    asyncio.run(_mark_superseded_revisions(
-        settings=Settings(GATE_WORKSPACE_ID="mark-personal", DROPBOX_CALL_ACCOUNT_ID="account-id"),
-        session_factory=factory,
-    ))
-    assert row.transcription_status == "rejected"
-    assert row.transcription_reason_code == (
-        "dropbox_call_revision_superseded" if later_transcript_exists
-        else "dropbox_call_media_unreadable"
-    )
-    assert sessions[-1].commits == int(later_transcript_exists)

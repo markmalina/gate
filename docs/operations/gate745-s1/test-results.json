@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "gate745.s1-author-checks/v1",
+  "independent": false,
+  "sourceChecks": {
+    "passed": 26,
+    "failed": 0,
+    "skipped": 0,
+    "node": "v24.19.0",
+    "logRawSha256": "59a833fb0b5efd3ef5c0950abe0e08be46f59d6418507c95b2041155ad044d94"
+  },
+  "canonicalRegressionSubset": {
+    "passed": 11,
+    "failed": 0,
+    "skipped": 0,
+    "logRawSha256": "4538b8294be479420f622e249972ee11ca370ac0b0375b46525cc5ad36084718"
+  },
+  "notPerformed": [
+    "Ops hosted CI/Security for proposed diff",
+    "new independent verdict",
+    "full legacy regression on modified Ops source",
+    "OIDC/supporting lane correction",
+    "Gate pin/lock update",
+    "live readonly run",
+    "fixture/native/Production/provider/credentials effects"
+  ]
+}

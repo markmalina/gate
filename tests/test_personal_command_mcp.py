@@ -170,13 +170,15 @@ async def test_default_off_and_conditional_catalog(harness: Any) -> None:
     ) as client:
         settings.gate_personal_command_tools_enabled = False
         response = await client.post("/mcp", json={"id": 1, "method": "tools/list"})
-        assert len(response.json()["result"]["tools"]) == 19
+        assert [
+            tool["name"] for tool in response.json()["result"]["tools"]
+        ] == mcp_routes.MCP_TOOL_NAMES
         metadata = (await client.get("/.well-known/oauth-protected-resource/mcp")).json()
         assert metadata["scopes_supported"] == mcp_metadata_routes.MCP_RESOURCE_SCOPES
         settings.gate_personal_command_tools_enabled = True
         response = await client.post("/mcp", json={"id": 1, "method": "tools/list"})
         tools = response.json()["result"]["tools"]
-        assert len(tools) == 25
+        assert [tool["name"] for tool in tools[:-6]] == mcp_routes.MCP_TOOL_NAMES
         assert [tool["name"] for tool in tools[-6:]] == list(PERSONAL_COMMAND_SCOPES)
         for tool in tools[-6:]:
             Draft202012Validator.check_schema(tool["inputSchema"])

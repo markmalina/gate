@@ -17,6 +17,12 @@ The separate inbound `getFile` >20 MB issue does not govern this upload.
 
 ## Required Work-facing path
 
+Read `gate_get_reply_context` first and review the current dialog. Require
+`context_ready=true` and pass its exact `context_snapshot` as
+`expected_context_snapshot` when preparing the document. If Gate returns
+`context_changed`, review `current_context` and prepare/approve a new draft.
+Never attach a refreshed token to an answer whose context was not reviewed.
+
 1. Work selects and locally hashes one supported original file. Its bytes enter Gate only
    through the dedicated authenticated `gate_prepare_reply_document` tool's
    `content_base64` upload argument. The 8 MiB limit is checked before
@@ -130,7 +136,8 @@ path with `scripts/gate_document_upload.py::upload_arguments`, or its CLI:
 
 ```bash
 python scripts/gate_document_upload.py /absolute/selected/report.xlsx \
-  --task-id VERIFIED_TASK_UUID --caption 'Согласованный отчёт' --follow-up
+  --task-id VERIFIED_TASK_UUID --expected-context-snapshot REVIEWED_CONTEXT_SNAPSHOT \
+  --caption 'Согласованный отчёт' --follow-up
 ```
 
 Consume its JSON stdout privately in code and pass that object directly to the
@@ -160,3 +167,4 @@ shows PDF/ZIP only. No provider credential or parallel sender is needed.
 No synthetic legacy CFB container fixture alone proves Word/Excel/PowerPoint can
 open it. No provider HTTP 200 alone proves recipient download/hash equality.
 Keep #700 open until those remaining product checks are evidenced.
+

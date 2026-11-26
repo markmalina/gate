@@ -9,7 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from jsonschema import Draft202012Validator, FormatChecker
 
-from app.api import mcp_routes
+from app.api import mcp_agent_reads, mcp_routes, mcp_status
 from app.api.deps import get_db_session
 from app.api.routes import get_telegram_client
 from app.api.mcp_schemas import MCP_TOOL_OUTPUT_SCHEMAS
@@ -634,6 +634,7 @@ def reply_context() -> Iterator[FakeMcpSession]:
         id=UUID(ACCOUNT_ID),
         alias="telegram_mark_ru",
         country_code="RU",
+        telegram_user_id=999,
     )
     outbound = SimpleNamespace(
         id=UUID("66666666-6666-6666-6666-666666666666"),
@@ -851,6 +852,8 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_get_owner_reply_readiness",
         "gate_save_reply_draft",
         "gate_prepare_reply_document",
+        "gate_prepare_reply_media",
+        "gate_preview_reply_media",
         "gate_send_approved_reply",
         "gate_send_approved_document",
         "gate_queue_approved_reply_sequence",
@@ -873,6 +876,8 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_get_owner_reply_readiness",
         "gate_save_reply_draft",
         "gate_prepare_reply_document",
+        "gate_prepare_reply_media",
+        "gate_preview_reply_media",
         "gate_send_approved_reply",
         "gate_send_approved_document",
         "gate_queue_approved_reply_sequence",
@@ -887,6 +892,12 @@ async def test_mcp_initialize_and_tools_list_are_authenticated(
         "gate_beta_get_provider_probe",
     ):
         _assert_valid_output(tool_name, {"error": "invalid_arguments"})
+    media_tools = {tool["name"]: tool for tool in tools if tool["name"] in {
+        "gate_prepare_reply_media", "gate_preview_reply_media"
+    }}
+    assert media_tools["gate_prepare_reply_media"]["annotations"]["readOnlyHint"] is False
+    assert media_tools["gate_preview_reply_media"]["annotations"]["readOnlyHint"] is True
+    tools = [tool for tool in tools if tool["name"] not in media_tools]
     assert tools[0]["annotations"]["readOnlyHint"] is True
     assert tools[1]["annotations"]["readOnlyHint"] is True
     assert tools[2]["annotations"]["readOnlyHint"] is True
@@ -1017,9 +1028,9 @@ async def test_beta_provider_probe_cannot_create_unanchored_wedding_binding(
         def __getattr__(self, _name: str) -> object:
             raise AssertionError("read-only provider probe touched the database")
 
-    monkeypatch.setattr(mcp_routes, "get_beta_provider_probe", read_probe)
+    monkeypatch.setattr(mcp_agent_reads, "get_beta_provider_probe", read_probe)
     monkeypatch.setattr(
-        mcp_routes,
+        mcp_agent_reads,
         "build_telegram_http_client",
         lambda: HttpClientContext(),
     )
@@ -1079,44 +1090,53 @@ async def test_mcp_status_is_scoped(
     mcp_context: FakeMcpSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    calls_status = mcp_status.dropbox_call_operational_status
+
+    async def calls_status_with_reasons(*args: Any, **kwargs: Any) -> Any:
+        snapshot, _ = await calls_status(*args, **kwargs)
+        return snapshot, {"telegram_voice_no_speech": 104, "unspecified": 1}
+
     monkeypatch.setattr(
-        "app.api.mcp_routes.beta_katya_space_operational_status",
+        mcp_status, "dropbox_call_operational_status", calls_status_with_reasons,
+    )
+    monkeypatch.setattr(
+        "app.api.mcp_status.beta_katya_space_operational_status",
         _beta_katya_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.beta_wedding_space_operational_status",
+        "app.api.mcp_status.beta_wedding_space_operational_status",
         _beta_wedding_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.telegram_voice_operational_status",
+        "app.api.mcp_status.telegram_voice_operational_status",
         _voice_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.telegram_business_text_parity_status",
+        "app.api.mcp_status.telegram_business_text_parity_status",
         _parity_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.historical_debt_diagnostics",
+        "app.api.mcp_status.historical_debt_diagnostics",
         _historical_debt_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.owner_voice_archive_inventory",
+        "app.api.mcp_status.owner_voice_archive_inventory",
         _voice_archive_inventory,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.become_controlled_intake_status",
+        "app.api.mcp_status.become_controlled_intake_status",
         _become_intake_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.become_i4_recovery_status",
+        "app.api.mcp_status.become_i4_recovery_status",
         _become_recovery_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.become_quest_status",
+        "app.api.mcp_status.become_quest_status",
         _become_quest_status,
     )
     monkeypatch.setattr(
-        "app.api.mcp_routes.probe_all_i4_connectivity",
+        "app.api.mcp_status.probe_all_i4_connectivity",
         _become_connectivity,
     )
     response = await _post(
@@ -1131,6 +1151,10 @@ async def test_mcp_status_is_scoped(
     structured = result["structuredContent"]
     _assert_valid_output("gate_get_status", structured)
     _assert_main_legacy_output("gate_get_status", structured)
+    status_text = result["content"][0]["text"]
+    assert "Dropbox Calls by reason (all incomplete recordings):" in status_text
+    assert "- telegram_voice_no_speech: 104" in status_text
+    assert "- unspecified: 1" in status_text
     assert len(structured["mcp"]["tools"]) == 18
     assert structured["mcp"]["tools"] == mcp_routes.MCP_LEGACY_STATUS_TOOL_NAMES
     assert set(structured["mcp"]["tools"]) < set(mcp_routes.MCP_TOOL_NAMES)
@@ -1293,9 +1317,25 @@ async def test_mcp_list_unanswered_returns_only_query_scoped_items(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("changes_during_read", [False, True])
 async def test_mcp_reply_context_shows_account_and_chronological_history(
     reply_context: FakeMcpSession,
+    monkeypatch: pytest.MonkeyPatch,
+    changes_during_read: bool,
 ) -> None:
+    reads = 0
+    async def snapshot(*args, **kwargs):
+        nonlocal reads
+        reads += 1
+        return "102" if changes_during_read and reads > 1 else "101"
+    async def events(*args, **kwargs):
+        return [], False, True
+    async def read_issue(*args, **kwargs):
+        return None
+    # Chronology/schema unit test; real revision SQL is covered in PostgreSQL.
+    monkeypatch.setattr("app.application.mcp_inbox.dialog_read_issue", read_issue)
+    monkeypatch.setattr("app.application.mcp_inbox.dialog_snapshot", snapshot)
+    monkeypatch.setattr("app.application.mcp_inbox.recent_dialog_events", events)
     response = await _post(
         {
             "jsonrpc": "2.0",
@@ -1314,6 +1354,8 @@ async def test_mcp_reply_context_shows_account_and_chronological_history(
     result = response.json()["result"]
     structured = result["structuredContent"]
     _assert_valid_output("gate_get_reply_context", structured)
+    assert structured["context_ready"] is (not changes_during_read)
+    assert (structured["context_snapshot"] is None) is changes_during_read
     assert structured["account"]["label"] == "RU"
     assert structured["counterparty"]["label"] == "Аня — бухгалтер"
     assert {
@@ -1324,7 +1366,13 @@ async def test_mcp_reply_context_shows_account_and_chronological_history(
         "outbound",
     ]
     assert "[RU]" in result["content"][0]["text"]
-    assert len(reply_context.statements) == 2
+    assert len(reply_context.statements) == 3
+    assert structured["reply_sequences"] == []
+    series_query = str(reply_context.statements[2])
+    assert "reply_drafts.account_id IN" in series_query
+    assert "reply_drafts.project_id IN" in series_query
+    assert "reply_drafts.reply_task_id =" in series_query
+    assert "workspace_id" in str(reply_context.statements[2].compile().params)
 
 
 @pytest.mark.anyio

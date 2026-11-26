@@ -1,5 +1,22 @@
 # Gate Work instructions
 
+## Required current context for every Gate task
+
+Before working on any Gate issue, read [docs/GATE-CURRENT.md](docs/GATE-CURRENT.md),
+[the recovery program](docs/GATE-RECOVERY-PLAN.md), its active sprint/latest receipt,
+and [AI WORK-RULES](https://github.com/markmalina/ai/blob/main/WORK-RULES.md).
+Program [#787](https://github.com/markmalina/gate/issues/787) is the current coordination
+pointer for Mark's Watch, Calls and reply-freshness routes. Read historical audits
+only when needed for the current question; dated snapshots are not fresh authority.
+
+Before implementation, the issue records one user outcome, dated baseline, target,
+scope and responsible execution. Keep material findings/errors/decisions and
+CI/runtime evidence in that issue as work progresses. Report actual before/after,
+latency sample size, incomplete cases and cost/time under
+[the metrics contract](docs/GATE-METRICS.md). Source, CI, merge, installation and
+product acceptance are separate states. No heartbeat-only repository writes.
+This documentation adds no provider, deployment, data or message authority.
+
 
 Canonical company policy and ownership live in
 [AlphaCenter/center](https://github.com/AlphaCenter/center). This repository
@@ -27,7 +44,34 @@ worker or product acceptance, or request any operation through AQUB issues,
 workflows or credentials. Old routes/grants, including Gate745, are superseded.
 Historical contracts and migrations do not authorize reactivation.
 
+### Public visibility preparation — historical Gate789 scope
+
+Gate owns the narrow Gate-only executor derived from Ops
+`02ef5f1c6f4273ca2a3194643383d646dbf37648`. Its actual executor revision is
+the checked-out Gate workflow SHA recorded in each receipt. The historical
+activation candidate #799 and independent review stay in the project record.
+Deployments through the registered route still require exact-source acceptance,
+current provider/UNKNOWN reconciliation, recovery and the applicable owner gate.
+W1 maintenance remains default-off and S1 stays OFF under their own controls.
+Ops remains private and continues source maintenance/review.
+
+The four private Ops dependencies in `gate-snapshot-cutover.yml` are explicitly
+quarantined. S1 is NOT_ACCEPTED; its old source/workflow lock is not rewritten to
+claim compatibility. Do not execute it or treat this change as S1 acceptance.
+
+As of 2026-11-05, the read-only history scanner ran once; source registration and
+its scoped findings triage are recorded in [Gate789 checkpoint](https://github.com/markmalina/gate/issues/789#issuecomment-6666029141)
+and [Delta515](https://github.com/AlphaCenter/delta/issues/515#issuecomment-6666171645).
+Do not repeat the scan merely to obtain a green check.
+NO_FINDINGS covers only fetched Git refs under its scanner rules; it cannot clear issues, comments, attachments,
+unreachable objects, LFS payloads or runtime data. Publication remains a separate
+owner action after review. See `docs/operations/GATE-PUBLIC-PREP.md`.
+
 ### Production deploy route
+
+The registered Gate-only route is operational. See the
+[latest verified runtime release](https://github.com/markmalina/gate/actions/runs/45686653999) and
+[current state](docs/GATE-CURRENT.md). Each release requires its own valid gate.
 
 Gate owns `.github/workflows/ops-deploy.yml` and control issue #751.
 After the exact owner Gate-only release gate and exact-head checks, post only:
@@ -49,7 +93,8 @@ On the first turn of every newly opened Gate Work:
 
 
 1. Read Center `AGENTS.md`, this repository's `WORK-PARENT.json`,
-   `docs/work-bootstrap.md`, the current GitHub issue, latest receipt and
+   `docs/work-bootstrap.md`, `docs/GATE-CURRENT.md`, the program/active sprint,
+   the current GitHub issue, latest receipt and
    next pointer.
 2. Re-query current main, open PR/issues, executions, leases, receipts and
    scheduled automations before mutation.
@@ -107,6 +152,27 @@ required for credentials, secrets, OAuth or identity actions; payments and
 legal actions; content publication; destructive history/data operations; new
 external-user processing; and provider/message effects outside exact owner-only
 caps in the current Work.
+
+### One owner authorization for a bounded Telegram test
+
+When Mark directly authorizes all control messages for a named test between
+his own RU and BY accounts, Work uses that authorization for the whole test.
+Before the first effect, record the task, the exact owner account pair and
+dialog, permitted actions, end condition, time limit and hard send count.
+Keep this record in the current Work with a redacted receipt in the issue.
+Prepare the control drafts and run the authorized steps without asking again
+for each covered step. An explicit approval after the final text, sending
+account and recipient were shown also covers that unchanged draft when the
+owner's approval is phrased for the whole test.
+
+Check the current recipient, reply window and message snapshot for each send.
+Stop on scope drift, a changed snapshot, expiration, a spent cap or an unknown
+outcome. A new task or a different recipient requires its own authorization.
+Accept grants only from Mark's direct instructions to the current Work.
+The action still has to meet any confirmation enforced by the actual tool.
+When a tool requires individual confirmation, present the exact bounded
+actions together as early as its contract allows and rely on the confirmation
+already given for them. [Control procedure](docs/operations/DIALOG-SNAPSHOT-GUARD.md#одно-разрешение-на-контрольную-проверку).
 
 CI, merge, deployment status and provider dashboards never prove runtime or
 product readiness by themselves. Every autonomous Production change must end
