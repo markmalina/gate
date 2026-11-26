@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from typing import Any
-
-from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse
-from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.mcp_results import (
     MCP_PROTOCOL_VERSION,
@@ -34,10 +31,43 @@ from app.api.personal_stage_file import (
     check_attachment,
     file_descriptor,
 )
-from app.core.mcp_oauth import McpOAuthError, authenticate_mcp_oauth
+from app.core.config import Settings
+from app.core.mcp_oauth import McpOAuthError, _decode_access_token, authenticate_mcp_oauth
 from app.infrastructure.database import database_runtime_lifespan
 from app.personal_telegram.command_scope import CommandRuntimeError
 from app.personal_telegram.work_stage import StageJournal, StageSettings
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
+from jwt.exceptions import InvalidTokenError, PyJWKClientError
+from sqlalchemy.exc import SQLAlchemyError
+
+logger = logging.getLogger("uvicorn.error")
+
+
+async def _record_command_result(
+    *, name: str, authorization: str | None, result: dict[str, Any], oauth: Settings
+) -> None:
+    content = result.get("result", {}).get("structuredContent", {})
+    code = content.get("error")
+    if code != "invalid_token":
+        logger.info("gate696_s1_command name=%s result=%s", name, code or "accepted")
+        return
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not token or len(token) > 24_000:
+        logger.info("gate696_s1_oauth name=%s reason=no_bearer", name)
+        return
+    try:
+        claims = await asyncio.to_thread(_decode_access_token, token, oauth)
+    except (InvalidTokenError, PyJWKClientError, OSError, ValueError) as error:
+        logger.info("gate696_s1_oauth name=%s reason=%s", name, type(error).__name__)
+        return
+    logger.info(
+        "gate696_s1_oauth name=%s reason=invalid_claims workspace=%s accounts=%s client=%s",
+        name,
+        oauth.mcp_oauth_workspace_claim in claims,
+        oauth.mcp_oauth_account_ids_claim in claims,
+        bool(claims.get("azp") or claims.get("client_id")),
+    )
 
 
 def create_app(config: StageSettings | None = None) -> FastAPI:
@@ -135,16 +165,18 @@ def create_app(config: StageSettings | None = None) -> FastAPI:
                 request.headers.get("Authorization"),
             )
             if name in PERSONAL_COMMAND_SCOPES:
-                return JSONResponse(
-                    await personal_command_call(
-                        request=request,
-                        request_id=request_id,
-                        tool_name=name,
-                        arguments=args,
-                        authorization=auth,
-                        settings=oauth,
-                    )
+                outcome = await personal_command_call(
+                    request=request,
+                    request_id=request_id,
+                    tool_name=name,
+                    arguments=args,
+                    authorization=auth,
+                    settings=oauth,
                 )
+                await _record_command_result(
+                    name=name, authorization=auth, result=outcome, oauth=oauth
+                )
+                return JSONResponse(outcome)
             if name != FILE_TOOL:
                 return JSONResponse(
                     jsonrpc_error(request_id=request_id, code=-32602, message="Unknown tool")
