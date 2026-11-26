@@ -250,7 +250,7 @@ async def test_backfill_enrolls_only_the_exact_committed_sources(cohort_size):
                 source_path="/Alpha/Voice/test.m4a", filename="test.m4a",
                 media_type="audio/mp4", size_bytes=3, sha256="fixture", data=b"abc",
                 received_at=now, dropbox_modified_at=now, transcription_state="transcribed",
-                transcript="synthetic", text_saved_at=now, webhook_archived=True,
+                transcript="synthetic", text_saved_at=now, webhook_archived=bool(index % 2),
             ))
 
     def backfill_settings(ids):
@@ -263,16 +263,25 @@ async def test_backfill_enrolls_only_the_exact_committed_sources(cohort_size):
         assert backfill_event_ids(backfill_settings([ids[0], ids[0]])) == ()
         if cohort_size == 12:
             assert backfill_event_ids(backfill_settings(ids)) == ()
-        with pytest.raises(WatchVoiceError, match="watch_mark_backfill_scope_mismatch"):
+        with pytest.raises(WatchVoiceError, match="watch_mark_backfill_source_ineligible"):
             await enroll_mark_backfill(
                 backfill_settings([*ids[:cohort_size - 1], "cb480dee-1341-4bf9-9691-e91708d4453b"]),
                 factory, SCOPE,
             )
+        async with factory.begin() as session:
+            legacy = await session.get(WatchVoiceNote, ids[0])
+            legacy.delivery_state = "unknown"
+        with pytest.raises(WatchVoiceError, match="watch_mark_backfill_source_ineligible"):
+            await enroll_mark_backfill(backfill_settings(ids[:cohort_size]), factory, SCOPE)
         async with factory() as session:
             assert not await has_mark_updates(session, SCOPE)
+        async with factory.begin() as session:
+            legacy = await session.get(WatchVoiceNote, ids[0])
+            legacy.delivery_state = "pending"
         for _ in range(2):
             await enroll_mark_backfill(backfill_settings(ids[:cohort_size]), factory, SCOPE)
         async with factory() as session:
+            assert await has_mark_updates(session, SCOPE)
             versions = dict((await session.execute(
                 select(WatchVoiceNote.id, WatchVoiceNote.mark_publish_version)
             )).all())
@@ -311,6 +320,8 @@ async def test_operator_delivery_counts_use_only_current_mark_receipts():
             ({}, {"account_id": "foreign"}),
             ({}, {"mark_published_at": None}),
             ({}, {"mark_update_blocked": True}),
+            ({"webhook_archived": False, "mark_publish_version": 1}, {"mark_published_version": 1}),
+            ({"webhook_archived": False}, {}),
             ({"transcription_state": "unknown", "transcript": None}, {}),
             ({"workspace_key": "foreign"}, {}),
         )
@@ -339,8 +350,8 @@ async def test_operator_delivery_counts_use_only_current_mark_receipts():
 
         async with factory() as session:
             status = await operational_status(session, settings, scope_allowed=True)
-            assert status["delivery_counts"] == {"delivered": 3, "pending": 6}
-            assert status["transcription_counts"] == {"transcribed": 8, "unknown": 1}
+            assert status["delivery_counts"] == {"delivered": 4, "pending": 7}
+            assert status["transcription_counts"] == {"transcribed": 10, "unknown": 1}
             assert status["private_content_exposed"] is False
     finally:
         await engine.dispose()

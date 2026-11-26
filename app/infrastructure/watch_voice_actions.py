@@ -21,6 +21,7 @@ from app.core.watch_voice_actions_oidc import (
     REPOSITORY_ID,
     WORKFLOW_PATH,
 )
+from app.infrastructure.watch_mark_updates import mark_publication_source
 from app.infrastructure.watch_voice_github import MarkInboxClient, WatchVoiceError
 from app.infrastructure.watch_voice_post_payment import continue_note
 from app.infrastructure.watch_voice_recovery import (
@@ -606,7 +607,7 @@ async def operational_status(
         # The Mark App confirms publication in the card journal, not the legacy
         # per-note delivery field. Count each note once across both paths.
         delivered_to_mark = and_(
-            WatchVoiceNote.webhook_archived.is_(True),
+            mark_publication_source(),
             WatchVoiceNote.transcription_state == "transcribed",
             WatchVoiceNote.transcript.is_not(None),
             WatchVoiceNote.transcript != "",
