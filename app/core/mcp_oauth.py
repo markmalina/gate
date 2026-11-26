@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections.abc import Callable
 from functools import lru_cache
 from typing import Any
 from uuid import UUID
@@ -30,7 +31,11 @@ class McpOAuthError(Exception):
 
 
 async def authenticate_mcp_oauth(
-    *, authorization: str | None, settings: Settings, required_scope: str
+    *,
+    authorization: str | None,
+    settings: Settings,
+    required_scope: str,
+    claim_defaults: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> Principal:
     """Validate a Gate OAuth access token and map its claims to an explicit principal."""
 
@@ -42,6 +47,8 @@ async def authenticate_mcp_oauth(
         )
     try:
         claims = await asyncio.to_thread(_decode_access_token, token, settings)
+        if claim_defaults is not None:
+            claims = claim_defaults(claims)
         return _principal_from_claims(
             claims=claims,
             settings=settings,

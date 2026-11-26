@@ -126,7 +126,7 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> tuple[FastAPI, Any, ServiceDoubl
     return app, key, service, settings
 
 
-def _token(key: Any, **overrides: Any) -> str:
+def _token(key: Any, *, omit: tuple[str, ...] = (), **overrides: Any) -> str:
     now = datetime.now(UTC)
     claims = {
         "iss": ISSUER,
@@ -140,6 +140,8 @@ def _token(key: Any, **overrides: Any) -> str:
         "gate_account_ids": [str(TELEGRAM_MARK_RU_ACCOUNT_ID)],
     }
     claims.update(overrides)
+    for name in omit:
+        claims.pop(name)
     return jwt.encode(claims, key, algorithm="RS256")
 
 

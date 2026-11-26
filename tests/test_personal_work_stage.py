@@ -171,6 +171,18 @@ async def test_work_journal_after_lost_response_and_process_restart(stage, stage
         readiness = response["structuredContent"]
         Draft202012Validator(catalog[0]["outputSchema"]).validate(readiness)
         assert readiness["journal_ready"] and not readiness["runtime_connected"]
+        omitted = ("gate_workspace_id", "gate_account_ids")
+        for claims in (
+            {"sub": "other-owner"},
+            {"azp": "other-client"},
+            {"aud": "https://other.invalid/mcp"},
+        ):
+            wrong_identity = _token(key, omit=omitted, **claims)
+            assert (await call(client, "readiness", {}, wrong_identity))["isError"]
+        # Auth0's test API has no production-only custom claims.
+        public_oauth = _token(key, omit=omitted)
+        public_result = await call(client, "readiness", {}, public_oauth)
+        assert public_result["structuredContent"]["journal_ready"] is True
         assert (
             "test_target"
             not in (
