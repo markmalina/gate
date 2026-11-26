@@ -9,6 +9,11 @@ from contextlib import asynccontextmanager
 from copy import deepcopy
 from typing import Any
 
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
+from jwt.exceptions import InvalidTokenError, PyJWKClientError
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.api.mcp_results import (
     MCP_PROTOCOL_VERSION,
     jsonrpc_error,
@@ -33,13 +38,10 @@ from app.api.personal_stage_file import (
 )
 from app.core.config import Settings
 from app.core.mcp_oauth import McpOAuthError, _decode_access_token, authenticate_mcp_oauth
+from app.core.mcp_security import Principal
 from app.infrastructure.database import database_runtime_lifespan
 from app.personal_telegram.command_scope import CommandRuntimeError
 from app.personal_telegram.work_stage import StageJournal, StageSettings
-from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse
-from jwt.exceptions import InvalidTokenError, PyJWKClientError
-from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -73,6 +75,26 @@ async def _record_command_result(
 def create_app(config: StageSettings | None = None) -> FastAPI:
     stage = config or StageSettings.from_environment()
     oauth = stage.oauth_settings()
+
+    def configured_stage_claims(claims: dict[str, Any]) -> dict[str, Any]:
+        # The token is signature/audience/issuer-verified before this function runs.
+        # This mapping is confined to the one configured synthetic binding.
+        client = claims.get("azp", claims.get("client_id"))
+        if claims.get("sub") != stage.owner or client != stage.client_id:
+            raise McpOAuthError(error="invalid_token", description="The S1 identity is not bound")
+        scoped = dict(claims)
+        scoped.setdefault(stage.workspace_claim, stage.workspace)
+        scoped.setdefault(stage.account_ids_claim, [str(stage.scope().account_id)])
+        return scoped
+
+    async def stage_auth(authorization: str | None, required_scope: str) -> Principal:
+        return await authenticate_mcp_oauth(
+            authorization=authorization,
+            settings=oauth,
+            required_scope=required_scope,
+            claim_defaults=configured_stage_claims,
+        )
+
     catalog = deepcopy(personal_command_tools(oauth))
     ready = next(tool for tool in catalog if tool["name"] == "gate_personal_command_readiness")
     ready_schema = ready["outputSchema"]["oneOf"][0]
@@ -172,6 +194,7 @@ def create_app(config: StageSettings | None = None) -> FastAPI:
                     arguments=args,
                     authorization=auth,
                     settings=oauth,
+                    stage_auth=stage_auth,
                 )
                 await _record_command_result(
                     name=name, authorization=auth, result=outcome, oauth=oauth
@@ -182,9 +205,7 @@ def create_app(config: StageSettings | None = None) -> FastAPI:
                     jsonrpc_error(request_id=request_id, code=-32602, message="Unknown tool")
                 )
             try:
-                principal = await authenticate_mcp_oauth(
-                    authorization=auth, settings=oauth, required_scope=FILE_SCOPE
-                )
+                principal = await stage_auth(auth, FILE_SCOPE)
                 journal: StageJournal = request.app.state.personal_command_service_factory(
                     principal
                 )

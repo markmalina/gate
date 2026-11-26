@@ -5,12 +5,14 @@ from __future__ import annotations
 import inspect
 import json
 import re
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import Request
 
 from app.core.config import Settings
 from app.core.mcp_oauth import McpOAuthError, authenticate_mcp_oauth
+from app.core.mcp_security import Principal
 from app.personal_telegram.command_scope import CommandRuntimeError
 
 JsonObject = dict[str, Any]
@@ -121,7 +123,7 @@ def personal_command_tools(settings: Settings) -> list[JsonObject]:
                     "oneOf": [
                         READINESS_SCHEMA if action == "readiness" else OPERATION_SCHEMA,
                         ERROR_SCHEMA,
-                    ]
+                    ],
                 },
                 "annotations": {
                     "readOnlyHint": action in {"readiness", "status", "result"},
@@ -144,6 +146,7 @@ async def personal_command_call(
     arguments: Any,
     authorization: str | None,
     settings: Settings,
+    stage_auth: Callable[[str | None, str], Awaitable[Principal]] | None = None,
 ) -> JsonObject:
     """Authenticate verified claims directly; never resolve broad Business grants."""
     if not settings.gate_personal_command_tools_enabled:
@@ -152,9 +155,12 @@ async def personal_command_call(
         return _error(request_id, "personal_oauth_required")
     required_scope = PERSONAL_COMMAND_SCOPES[tool_name]
     try:
-        principal = await authenticate_mcp_oauth(
-            authorization=authorization, settings=settings, required_scope=required_scope
-        )
+        if stage_auth is None:
+            principal = await authenticate_mcp_oauth(
+                authorization=authorization, settings=settings, required_scope=required_scope
+            )
+        else:
+            principal = await stage_auth(authorization, required_scope)
     except McpOAuthError as exc:
         return personal_oauth_error(request_id, exc.error, required_scope, settings)
     action = tool_name.removeprefix("gate_personal_command_")
