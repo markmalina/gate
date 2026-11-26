@@ -178,8 +178,8 @@ async def run_watch_mark_loop(
                 if backfill_pending:
                     try:
                         await enroll_mark_backfill(settings, factory, watch_scope(settings))
-                    except WatchVoiceError:
-                        logger.warning("Watch Mark backfill scope did not match")
+                    except WatchVoiceError as exc:
+                        logger.warning("Watch Mark backfill deferred: %s", exc.code)
                     backfill_pending = False
                 if await publish_watch_pass(settings, factory, http, key, installation):
                     continue

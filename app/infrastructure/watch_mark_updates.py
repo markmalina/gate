@@ -10,6 +10,7 @@ from uuid import UUID
 
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.config import Settings
 from app.infrastructure.watch_app_inbox import AppInboxClient
@@ -20,6 +21,7 @@ from app.models.watch_voice import WatchEarlyCard, WatchVoiceNote
 EARLY_STATUS = "Статус: запись обнаружена; расшифровка ожидается."
 UPDATE_RETRY = timedelta(seconds=60)
 MAX_BACKFILL_EVENTS = 12
+BACKFILL_VERSION = 1
 _STRICT_ERRORS = {
     "github_watch_issue_mismatch", "watch_mark_block_mismatch", "watch_mark_source_mismatch",
     "watch_mark_version_mismatch", "watch_mark_transcript_conflict",
@@ -57,6 +59,25 @@ class MarkUpdate:
         return self.text_saved_at or self.legacy_finished_at
 
 
+def _unpublished_legacy_note() -> ColumnElement[bool]:
+    return and_(
+        WatchVoiceNote.transcription_state == "transcribed",
+        WatchVoiceNote.delivery_state == "pending",
+        WatchVoiceNote.next_part == 0,
+        WatchVoiceNote.issue_number.is_(None),
+        WatchVoiceNote.issue_url.is_(None),
+        WatchVoiceNote.github_received_at.is_(None),
+    )
+
+
+def mark_publication_source() -> ColumnElement[bool]:
+    # Non-webhook notes start at version 0 and only explicit backfill enrolls them.
+    return or_(
+        WatchVoiceNote.webhook_archived.is_(True),
+        and_(WatchVoiceNote.mark_publish_version == BACKFILL_VERSION, _unpublished_legacy_note()),
+    )
+
+
 def _queue(scope: dict[str, str], *columns: Any) -> Any:
     return (
         select(*columns)
@@ -71,7 +92,7 @@ def _queue(scope: dict[str, str], *columns: Any) -> Any:
         .where(
             WatchVoiceNote.workspace_key == scope["workspace_key"],
             WatchVoiceNote.account_id == scope["account_id"],
-            WatchVoiceNote.webhook_archived.is_(True),
+            mark_publication_source(),
             WatchVoiceNote.mark_publish_version > 0,
             WatchEarlyCard.state == "saved",
             WatchEarlyCard.issue_number.is_not(None),
@@ -174,8 +195,8 @@ async def enroll_mark_backfill(
     async with factory.begin() as session:
         rows = (await session.execute(
             select(
-                WatchVoiceNote.id, WatchVoiceNote.mark_publish_version,
-                WatchVoiceNote.issue_url, WatchEarlyCard.issue_url, WatchEarlyCard.issue_number,
+                WatchVoiceNote.id, WatchVoiceNote.issue_url,
+                WatchEarlyCard.issue_url, WatchEarlyCard.issue_number,
             ).join(WatchEarlyCard, and_(
                 WatchEarlyCard.id == WatchVoiceNote.id,
                 WatchEarlyCard.workspace_key == WatchVoiceNote.workspace_key,
@@ -186,26 +207,34 @@ async def enroll_mark_backfill(
                 WatchVoiceNote.id.in_(event_ids),
                 WatchVoiceNote.workspace_key == scope["workspace_key"],
                 WatchVoiceNote.account_id == scope["account_id"],
-                WatchVoiceNote.webhook_archived.is_(True),
+                or_(
+                    WatchVoiceNote.webhook_archived.is_(True),
+                    and_(
+                        WatchVoiceNote.mark_publish_version.in_((0, BACKFILL_VERSION)),
+                        _unpublished_legacy_note(),
+                    ),
+                ),
                 WatchVoiceNote.transcription_state == "transcribed",
                 WatchVoiceNote.transcript.is_not(None),
                 WatchVoiceNote.transcript != "",
                 WatchEarlyCard.state == "saved",
                 WatchEarlyCard.issue_number > 0,
                 WatchEarlyCard.issue_url.is_not(None),
-            )
+            ).with_for_update(of=WatchVoiceNote)
         )).all()
-        if len(rows) != len(event_ids) or any(
+        if len(rows) != len(event_ids):
+            raise WatchVoiceError("watch_mark_backfill_source_ineligible")
+        if any(
             card_url != f"https://github.com/{REPOSITORY}/issues/{number}"
             or (note_url is not None and note_url != card_url)
-            for _, _, note_url, card_url, number in rows
+            for _, note_url, card_url, number in rows
         ) or len({row.issue_number for row in rows}) != len(event_ids):
-            raise WatchVoiceError("watch_mark_backfill_scope_mismatch")
+            raise WatchVoiceError("watch_mark_backfill_card_mismatch")
         await session.execute(
             update(WatchVoiceNote).where(
                 WatchVoiceNote.id.in_([row.id for row in rows]),
                 WatchVoiceNote.mark_publish_version == 0,
-            ).values(mark_publish_version=1)
+            ).values(mark_publish_version=BACKFILL_VERSION)
         )
 
 
