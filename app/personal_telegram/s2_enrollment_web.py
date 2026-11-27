@@ -13,6 +13,7 @@ import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from importlib import import_module
 from pathlib import Path
 from time import monotonic
@@ -21,7 +22,7 @@ from urllib.parse import parse_qs
 
 from cryptography.fernet import Fernet
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from telethon import TelegramClient  # type: ignore[import-untyped]
 from telethon.errors import (  # type: ignore[import-untyped]
     FloodWaitError,
@@ -42,7 +43,12 @@ from app.application.personal_telegram_transport import PersonalTelegramTranspor
 from app.personal_telegram.cloud_session import SCHEMA
 from app.personal_telegram.cloud_worker import TelegramApplication
 from app.personal_telegram.command_scope import CommandRuntimeError
-from app.personal_telegram.s2_lifecycle_canary import run_s2_lifecycle_canary
+from app.personal_telegram.runtime_cli import run as runtime_run
+from app.personal_telegram.s2_lifecycle_canary import (
+    run_s2_lifecycle_canary,
+    start_s2_status_worker,
+    stop_s2_status_worker,
+)
 from app.personal_telegram.s2_session_vault import (
     ENVELOPE,
     SESSION_REF,
@@ -99,16 +105,20 @@ class Config:
     cipher: Fernet
     origin: str
     vault: Path
+    status_token: str = ""
 
     @classmethod
     def read(cls) -> Config | None:
         origin = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
         phone = os.getenv("GATE_S2_OWNER_PHONE", "")
         access = os.getenv("GATE_S2_ACCESS_KEY", "")
+        status_token = os.getenv("GATE_S2_WORK_STATUS_TOKEN", "")
         if (
             not re.fullmatch(r"[a-z0-9-]+\.up\.railway\.app", origin)
             or not re.fullmatch(r"\+7[0-9]{10}", phone)
             or not re.fullmatch(r"[A-Za-z0-9_-]{43}", access)
+            or status_token
+            and not re.fullmatch(r"[A-Za-z0-9_-]{43}", status_token)
         ):
             return None
         try:
@@ -121,7 +131,7 @@ class Config:
             cipher = Fernet(os.environ["GATE_S2_SESSION_KEY"].encode("ascii"))
         except (KeyError, ValueError, RuntimeError, OSError):
             return None
-        return cls(app, phone[1:], access, cipher, f"https://{origin}", VAULT)
+        return cls(app, phone[1:], access, cipher, f"https://{origin}", VAULT, status_token)
 
 
 def page(message: str, form: str = "", *, status: int = 200, refresh: bool = False) -> HTMLResponse:
@@ -420,6 +430,50 @@ async def bootstrap_command_store() -> None:
             await process.wait()
 
 
+async def read_s2_work_status(environment: dict[str, str]) -> dict[str, object]:
+    """Read only the encrypted binding and current lease; never call Telegram."""
+    async with asyncio.timeout(10):
+        result = await runtime_run("inspect", 20, environment, s2_owner=True)
+    required = {
+        "configured": bool,
+        "runtime_connected": bool,
+        "owner_lease_present": bool,
+        "lease_generation": int,
+        "send_enabled": bool,
+        "create_group_enabled": bool,
+    }
+    if any(type(result.get(key)) is not kind for key, kind in required.items()) or (
+        result.get("account") != "RU"
+        or result.get("send_enabled") is not False
+        or result.get("create_group_enabled") is not False
+        or result.get("authenticated") not in {True, None}
+        or not isinstance(result.get("custody_state"), str)
+        or not isinstance(result.get("state"), str)
+        or result.get("last_successful_check") is not None
+        and not isinstance(result.get("last_successful_check"), str)
+        or result.get("error_code") is not None
+        and not isinstance(result.get("error_code"), str)
+    ):
+        raise CommandRuntimeError("s2_status_invalid")
+    return {
+        "account": "RU",
+        "configured": result["configured"],
+        "authenticated": result.get("authenticated"),
+        "custody_state": result["custody_state"],
+        "runtime_connected": result["runtime_connected"],
+        "owner_lease_present": result["owner_lease_present"],
+        "lease_generation": result["lease_generation"],
+        "last_successful_check": result.get("last_successful_check"),
+        "state": result["state"],
+        "send_enabled": False,
+        "create_group_enabled": False,
+        "error_code": result.get("error_code"),
+        "observed_at": datetime.now(UTC).isoformat(),
+        "source": "s2_command_store",
+        "provider_calls": 0,
+    }
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     config = Config.read()
@@ -452,6 +506,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 LOG.warning("s2_ru_lifecycle_failed_%s", safe)
             except Exception:
                 LOG.warning("s2_ru_lifecycle_failed")
+    status_worker = None
+    status_run = os.getenv("GATE_S2_WORK_STATUS_ACCEPTANCE", "")
+    if status_run:
+        if config is None or not config.status_token:
+            LOG.warning("s2_ru_work_status_configuration_missing")
+        else:
+            try:
+                status_worker = await start_s2_status_worker(status_run, os.environ)
+                LOG.info("s2_ru_work_status_acceptance_ready")
+            except Exception:
+                LOG.warning("s2_ru_work_status_acceptance_failed")
     probe = None
     run_id = os.getenv("GATE_S2_VERIFY_SAVED_SESSION", "")
     if config is not None and run_id:
@@ -468,6 +533,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             probe.cancel()
             with suppress(asyncio.CancelledError):
                 await probe
+        if status_worker is not None:
+            try:
+                await stop_s2_status_worker(status_worker)
+                LOG.info("s2_ru_work_status_acceptance_disconnected")
+            except Exception:
+                LOG.warning("s2_ru_work_status_acceptance_disconnect_failed")
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -506,6 +577,30 @@ async def form_value(request: Request, current: Enrollment, name: str) -> str:
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/s2/work-status")
+async def work_status(request: Request) -> Response:
+    current = enrollment(request)
+    header = request.headers.get("authorization", "")
+    scheme, _, token = header.partition(" ")
+    if (
+        current is None
+        or not current.config.status_token
+        or scheme.lower() != "bearer"
+        or not token
+        or not secrets.compare_digest(token, current.config.status_token)
+    ):
+        return Response(status_code=404, headers=HEADERS)
+    try:
+        status = await read_s2_work_status(dict(os.environ))
+    except Exception:
+        return JSONResponse(
+            {"error": "s2_status_unavailable"},
+            status_code=503,
+            headers=HEADERS,
+        )
+    return JSONResponse(status, headers=HEADERS)
 
 
 @app.get("/")
