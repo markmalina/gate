@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
+import re
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -11,6 +13,8 @@ import httpx
 
 from app.api.personal_command_mcp import ERROR_SCHEMA
 from app.personal_telegram.command_scope import CommandRuntimeError
+
+logger = logging.getLogger("uvicorn.error")
 
 FIXTURE = b"Gate MTProto RU S1 file roundtrip\n"
 FIXTURE_PATH = "/s1/fixture.txt"
@@ -69,8 +73,6 @@ def file_descriptor() -> dict[str, Any]:
 
 
 async def check_attachment(arguments: Any, *, host: str, resource: str) -> dict[str, Any]:
-    if not host:
-        raise CommandRuntimeError("work_file_host_unconfigured")
     file = arguments.get("file") if isinstance(arguments, dict) else None
     if (
         not isinstance(file, dict)
@@ -81,6 +83,14 @@ async def check_attachment(arguments: Any, *, host: str, resource: str) -> dict[
     ):
         raise CommandRuntimeError("invalid_arguments")
     url = file["download_url"]
+    if not host:
+        try:
+            observed = urlsplit(url).hostname or ""
+        except ValueError:
+            observed = ""
+        if re.fullmatch(r"[a-zA-Z0-9.-]{1,253}", observed):
+            logger.info("gate696_s1_file_route host=%s", observed)
+        raise CommandRuntimeError("work_file_host_unconfigured")
     try:
         parsed = urlsplit(url)
         if (
