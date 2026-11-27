@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from pathlib import Path
 from time import monotonic, sleep
 
@@ -15,6 +17,7 @@ from app.personal_telegram.s2_enrollment_web import (
     app,
     save_envelope,
     verify_owner,
+    verify_saved_session,
 )
 from telethon.tl.types import User
 from telethon.tl.types.auth import SentCode, SentCodeTypeApp
@@ -159,3 +162,48 @@ def test_phone_only_enrollment_uses_owner_number_and_encrypted_session(
         wait_for_page(client, "Российский аккаунт подтверждён Telegram")
     assert calls[-1] == ("submit", f"+{config.phone}", "01234", "fake-challenge")
     assert b"fake-mobile-session" in config.cipher.decrypt((config.vault / ENVELOPE).read_bytes())
+
+
+@pytest.mark.parametrize("reopened_owner", [123, 124])
+def test_saved_session_probe_has_one_client_and_requires_saved_owner(
+    config: Config,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    reopened_owner: int,
+) -> None:
+    save_envelope(config, owner_id=123, session="fake-saved-session")
+    original = (config.vault / ENVELOPE).read_bytes()
+    calls = []
+
+    class Telegram:
+        def __init__(self, session, *args, **kwargs):
+            assert session == "fake-saved-session"
+            assert kwargs["receive_updates"] is False
+            calls.append("client")
+
+        async def connect(self):
+            calls.append("connect")
+
+        async def get_me(self):
+            calls.append("get_me")
+            return User(id=reopened_owner, is_self=True, phone=config.phone)
+
+        async def disconnect(self):
+            calls.append("disconnect")
+
+    monkeypatch.setattr(web, "StringSession", lambda value: value)
+    monkeypatch.setattr(web, "TelegramClient", Telegram)
+
+    async def check() -> None:
+        await asyncio.gather(
+            verify_saved_session(config, "fixture-probe"),
+            verify_saved_session(config, "fixture-probe"),
+        )
+
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        asyncio.run(check())
+    assert calls == ["client", "connect", "get_me", "disconnect"]
+    assert (config.vault / ENVELOPE).read_bytes() == original
+    assert ("s2_ru_saved_session_verified_and_disconnected" in caplog.text) is (
+        reopened_owner == 123
+    )

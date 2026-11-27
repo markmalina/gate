@@ -18,7 +18,7 @@ from time import monotonic
 from typing import Any, Literal
 from urllib.parse import parse_qs
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from telethon import TelegramClient  # type: ignore[import-untyped]
@@ -45,6 +45,7 @@ LOG = logging.getLogger("uvicorn.error")
 PROJECT_ID = "4d14a47e-0f3c-47cf-9eb9-893fae7e2044"
 VAULT = Path("/gate-vault")
 ENVELOPE = "ru-session.bin"
+SESSION_REF = "session_gate_s2_ru"
 HEADERS = {
     "Cache-Control": "no-store, private",
     "Content-Security-Policy": (
@@ -154,7 +155,7 @@ def save_envelope(config: Config, *, owner_id: int, session: str) -> None:
         "schema": SCHEMA,
         "api_id": config.application.api_id,
         "owner_user_id": owner_id,
-        "session_ref": "session_gate_s2_ru",
+        "session_ref": SESSION_REF,
         "session": session,
     }
     temporary = config.vault / f".enrollment-{secrets.token_hex(8)}"
@@ -172,6 +173,81 @@ def save_envelope(config: Config, *, owner_id: int, session: str) -> None:
             os.close(fd)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+async def verify_saved_session(config: Config, run_id: str) -> None:
+    """Read the persisted envelope once per explicitly selected verification run."""
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", run_id):
+        LOG.warning("s2_ru_saved_session_probe_invalid_run")
+        return
+
+    try:
+        with (config.vault / ENVELOPE).open("rb") as handle:
+            raw = handle.read(16_385)
+        if not 0 < len(raw) <= 16_384:
+            raise ValueError("invalid_envelope")
+        payload = json.loads(config.cipher.decrypt(raw))
+        owner_id = payload["owner_user_id"]
+        session = payload["session"]
+        if (
+            payload["schema"] != SCHEMA
+            or payload["api_id"] != config.application.api_id
+            or payload["session_ref"] != SESSION_REF
+            or type(owner_id) is not int
+            or owner_id <= 0
+            or not isinstance(session, str)
+            or not 0 < len(session) <= 4096
+        ):
+            raise ValueError("invalid_envelope")
+        with (config.vault / f".verify-{run_id}").open("xb") as claim:
+            os.fsync(claim.fileno())
+        descriptor = os.open(config.vault, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    except FileExistsError:
+        return
+    except (OSError, InvalidToken, KeyError, TypeError, ValueError):
+        LOG.warning("s2_ru_saved_session_probe_unavailable")
+        return
+
+    client = None
+    verified = False
+    try:
+        client = TelegramClient(
+            StringSession(session),
+            config.application.api_id,
+            config.application.api_hash,
+            receive_updates=False,
+            catch_up=False,
+            auto_reconnect=False,
+            request_retries=0,
+            connection_retries=0,
+            flood_sleep_threshold=0,
+            timeout=5,
+            device_model="Gate RU S2",
+            app_version="S2 saved session check",
+        )
+        del session, payload, raw
+        async with asyncio.timeout(20):
+            await client.connect()
+            verified = verify_owner(await client.get_me(), config.phone) == owner_id
+    except Exception:
+        LOG.warning("s2_ru_saved_session_probe_failed")
+        return
+    finally:
+        if client is not None:
+            try:
+                await asyncio.wait_for(client.disconnect(), timeout=7)
+            except Exception:
+                LOG.warning("s2_ru_saved_session_probe_disconnect_failed")
+                verified = False
+
+    if verified:
+        LOG.info("s2_ru_saved_session_verified_and_disconnected")
+    else:
+        LOG.warning("s2_ru_saved_session_probe_owner_mismatch")
 
 
 class Enrollment:
@@ -323,6 +399,10 @@ class Enrollment:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     config = Config.read()
     app.state.enrollment = Enrollment(config) if config else None
+    probe = None
+    run_id = os.getenv("GATE_S2_VERIFY_SAVED_SESSION", "")
+    if config is not None and run_id:
+        probe = asyncio.create_task(verify_saved_session(config, run_id))
     try:
         yield
     finally:
@@ -331,6 +411,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             current.task.cancel()
             with suppress(asyncio.CancelledError):
                 await current.task
+        if probe is not None and not probe.done():
+            probe.cancel()
+            with suppress(asyncio.CancelledError):
+                await probe
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
