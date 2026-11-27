@@ -51,7 +51,8 @@ HEADERS = {
         "default-src 'none'; img-src 'self'; form-action 'self'; "
         "base-uri 'none'; frame-ancestors 'none'; style-src 'unsafe-inline'"
     ),
-    "Referrer-Policy": "no-referrer",
+    # Document form POSTs need their same-origin Origin header for CSRF checks.
+    "Referrer-Policy": "same-origin",
     "X-Content-Type-Options": "nosniff",
     "X-Robots-Tag": "noindex, nofollow",
 }
@@ -415,7 +416,9 @@ async def unlock(request: Request) -> Response:
     current = enrollment(request)
     if current is None:
         return page("Настройки отсутствуют.", status=503)
-    value = await form_value(request, current, "access")
+    if request.headers.get("origin") != current.config.origin:
+        return page("Обнови страницу Gate в браузере и повтори вход.", ACCESS, status=403)
+    value = (await form_value(request, current, "access")).strip()
     if not value:
         return page("Ключ не принят.", ACCESS, status=403)
     async with current.lock:

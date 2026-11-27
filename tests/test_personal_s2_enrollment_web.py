@@ -60,9 +60,10 @@ def test_browser_controls_are_owner_only(
     monkeypatch.setattr(Config, "read", staticmethod(lambda: config))
     with TestClient(app, base_url=config.origin) as client:
         assert client.get("/health").json() == {"status": "ok"}
+        assert client.get("/").headers["referrer-policy"] == "same-origin"
         assert client.get("/qr").status_code == 404
         assert client.post("/start").status_code == 403
-        payload = {"access": config.access}
+        payload = {"access": f" {config.access}\n"}
         assert (
             client.post(
                 "/unlock",
@@ -73,6 +74,10 @@ def test_browser_controls_are_owner_only(
             ).status_code
             == 403
         )
+        rejected = client.post("/unlock", data=payload, headers={"Origin": "null"})
+        assert rejected.status_code == 403
+        assert "Обнови страницу Gate" in rejected.text
+        assert "set-cookie" not in rejected.headers
         response = client.post(
             "/unlock",
             data=payload,
