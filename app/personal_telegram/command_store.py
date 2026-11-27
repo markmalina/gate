@@ -87,6 +87,8 @@ class RuntimeBindingRow(PersonalRuntimeBase):
     lease_generation: Mapped[int] = mapped_column(Integer, default=0)
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     health_state: Mapped[str] = mapped_column(String(32), default="disconnected")
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_verified_generation: Mapped[int | None] = mapped_column(Integer)
 
 
 class RuntimeOperationRow(PersonalRuntimeBase):
@@ -349,9 +351,12 @@ class SqlCommandStore:
         now: datetime,
         ttl: timedelta,
         health: str,
+        verified: bool = False,
     ) -> None:
         _require_clock(now, ttl)
-        if health not in {"connecting", "ready", "paused", "draining"}:
+        if health not in {"connecting", "ready", "paused", "draining"} or (
+            verified and health != "ready"
+        ):
             raise CommandRuntimeError("health_state_invalid")
         async with self.sessions.begin() as session:
             row = await self._binding(session)
@@ -360,6 +365,9 @@ class SqlCommandStore:
                 raise CommandRuntimeError("session_transition_not_ready")
             row.lease_expires_at = now + ttl
             row.health_state = health
+            if verified:
+                row.last_verified_at = now
+                row.last_verified_generation = token.generation
 
     async def release_disconnected_owner(self, token: LeaseToken) -> None:
         """Trusted worker calls ONLY after disconnect completed successfully."""

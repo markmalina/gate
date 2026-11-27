@@ -147,7 +147,9 @@ class RuCloudWorker:
                 )
                 client = self.client_factory(session)
                 await self._connect_verified(client)
-                await self.store.renew_owner(token, now=self.clock(), ttl=self.ttl, health="ready")
+                await self.store.renew_owner(
+                    token, now=self.clock(), ttl=self.ttl, health="ready", verified=True
+                )
 
             await asyncio.wait_for(startup(), self.startup_timeout)
             while not stop.is_set():
