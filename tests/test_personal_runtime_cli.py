@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 from datetime import timedelta
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from app.application.personal_telegram_transport import PersonalTelegramTransportError
 from app.personal_telegram.cloud_session import PREFIX, SCHEMA
 from app.personal_telegram.command_scope import CommandRuntimeError, utc_now
 from app.personal_telegram.command_store import (
@@ -15,7 +17,15 @@ from app.personal_telegram.command_store import (
     RuntimeBindingRow,
     SqlCommandStore,
 )
-from app.personal_telegram.runtime_cli import RuntimeSettings, import_existing, inspect_runtime, run
+from app.personal_telegram.runtime_cli import (
+    RuntimeSettings,
+    import_existing,
+    import_s2_volume,
+    inspect_runtime,
+    require_s2_database,
+    run,
+)
+from app.personal_telegram.s2_session_vault import ENVELOPE, SESSION_REF, read_s2_session
 from cryptography.fernet import Fernet
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -122,3 +132,67 @@ async def test_import_cannot_replace_other_owner_or_synthetic_binding(isolated):
     with pytest.raises(CommandRuntimeError, match="ru_binding_conflict"):
         await import_existing(sessions, config, environment)
     assert not (await inspect_runtime(sessions, config))["configured"]
+
+
+@pytest.mark.anyio
+async def test_volume_import_is_encrypted_idempotent_and_refuses_other_sessions(
+    isolated,
+    tmp_path: Path,
+):
+    sessions, config, _ = isolated
+    vault_cipher = Fernet(Fernet.generate_key())
+    source = tmp_path / ENVELOPE
+
+    def seal(session: str) -> None:
+        payload = {
+            "schema": SCHEMA,
+            "api_id": 100,
+            "owner_user_id": 40,
+            "session_ref": SESSION_REF,
+            "session": session,
+        }
+        source.write_bytes(vault_cipher.encrypt(json.dumps(payload).encode()))
+
+    seal("fixture-volume-session")
+    snapshot = read_s2_session(tmp_path, vault_cipher, api_id=100)
+    assert "fixture-volume-session" not in repr(snapshot)
+    assert (await import_s2_volume(sessions, config, snapshot))["state"] == "prepared"
+    assert (await import_s2_volume(sessions, config, snapshot))["state"] == "already_prepared"
+    status = await inspect_runtime(sessions, config)
+    assert status["configured"] and not status["runtime_connected"]
+    async with sessions() as session:
+        row = await session.get(RuntimeBindingRow, config.binding_id)
+        initial_ciphertext = row.ciphertext
+        assert b"fixture-volume-session" not in row.ciphertext
+    seal("other-volume-session")
+    with pytest.raises(CommandRuntimeError, match="ru_binding_session_conflict"):
+        await import_s2_volume(
+            sessions, config, read_s2_session(tmp_path, vault_cipher, api_id=100)
+        )
+    with pytest.raises(PersonalTelegramTransportError, match="s2_vault_identity_mismatch"):
+        read_s2_session(tmp_path, vault_cipher, api_id=101)
+    async with sessions() as session:
+        assert (
+            await session.get(RuntimeBindingRow, config.binding_id)
+        ).ciphertext == initial_ciphertext
+    source.write_bytes(b"malformed")
+    with pytest.raises(PersonalTelegramTransportError, match="cloud_session_unavailable"):
+        read_s2_session(tmp_path, vault_cipher, api_id=100)
+    source.unlink()
+    other = tmp_path / "other"
+    other.write_bytes(b"not a followable file")
+    source.symlink_to(other)
+    with pytest.raises(PersonalTelegramTransportError, match="s2_vault_unavailable"):
+        read_s2_session(tmp_path, vault_cipher, api_id=100)
+
+
+def test_s2_database_scope_refuses_public_hosts_and_other_databases():
+    exact = "postgresql+asyncpg://gate_s2:test@gate-ru-store.railway.internal:5432/gate_s2_ru"
+    require_s2_database(exact)
+    for dsn in (
+        exact.replace("gate-ru-store.railway.internal", "elsewhere.invalid"),
+        exact.replace("/gate_s2_ru", "/other"),
+        exact + "?host=elsewhere.invalid",
+    ):
+        with pytest.raises(CommandRuntimeError, match="s2_runtime_database_scope_mismatch"):
+            require_s2_database(dsn)

@@ -17,7 +17,12 @@ from app.application.personal_telegram_transport import (
 PREFIX = "GATE_PERSONAL_TELEGRAM_"
 SCHEMA = "gate.personal-telegram.cloud-session/v1"
 FIELDS = (
-    "API_ID", "API_HASH", "OWNER_USER_ID", "SESSION_REF", "SESSION_CIPHERTEXT", "ENCRYPTION_KEY"
+    "API_ID",
+    "API_HASH",
+    "OWNER_USER_ID",
+    "SESSION_REF",
+    "SESSION_CIPHERTEXT",
+    "ENCRYPTION_KEY",
 )
 
 
@@ -63,6 +68,44 @@ class CloudSessionBinding:
         )
 
 
+@dataclass(frozen=True, slots=True, repr=False)
+class StoredCloudSession:
+    api_id: int
+    owner_user_id: int
+    session_ref: str
+    session: str
+
+
+def open_cloud_session(cipher: Fernet, ciphertext: bytes) -> StoredCloudSession:
+    """Decode the common authenticated envelope, without resolving a caller's scope."""
+    try:
+        if not 0 < len(ciphertext) <= 16384:
+            raise ValueError
+        payload = json.loads(cipher.decrypt(ciphertext))
+        if not isinstance(payload, dict) or payload.get("schema") != SCHEMA:
+            raise ValueError
+        api_id = payload.get("api_id")
+        owner_id = payload.get("owner_user_id")
+        ref = payload.get("session_ref")
+        value = payload.get("session")
+        if (
+            type(api_id) is not int
+            or not 0 < api_id < 2**31
+            or type(owner_id) is not int
+            or not 0 < owner_id < 2**63
+            or not isinstance(ref, str)
+            or len(ref) > 256
+            or not isinstance(value, str)
+            or not 0 < len(value) <= 4096
+            or value != value.strip()
+        ):
+            raise ValueError
+        _require_prefixed_ref(ref, "session_", "session_ref")
+        return StoredCloudSession(api_id, owner_id, ref, value)
+    except (ValueError, TypeError, UnicodeError, InvalidToken, PersonalTelegramTransportError):
+        raise PersonalTelegramTransportError("cloud_session_unavailable") from None
+
+
 class CloudEncryptedSessionSource:
     """Unseal only the configured owner/application/session inside this process."""
 
@@ -73,31 +116,18 @@ class CloudEncryptedSessionSource:
         if session_ref != self._binding.session_ref:
             raise PersonalTelegramTransportError("cloud_session_scope_mismatch")
         try:
-            payload = json.loads(
-                Fernet(self._binding.encryption_key.encode("ascii"))
-                .decrypt(self._binding.ciphertext.encode("ascii"))
-                .decode("utf-8")
+            value = open_cloud_session(
+                Fernet(self._binding.encryption_key.encode("ascii")),
+                self._binding.ciphertext.encode("ascii"),
             )
             if (
-                not isinstance(payload, dict)
-                or payload.get("schema") != SCHEMA
-                or type(payload.get("api_id")) is not int
-                or payload["api_id"] != self._binding.api_id
-                or type(payload.get("owner_user_id")) is not int
-                or payload["owner_user_id"] != self._binding.expected_owner_user_id
-                or payload.get("session_ref") != session_ref
+                value.api_id != self._binding.api_id
+                or value.owner_user_id != self._binding.expected_owner_user_id
+                or value.session_ref != session_ref
             ):
                 raise ValueError
-            session = payload.get("session")
-            if (
-                not isinstance(session, str)
-                or not session
-                or session != session.strip()
-                or len(session) > 4096
-            ):
-                raise ValueError
-            return session
-        except (ValueError, TypeError, UnicodeError, InvalidToken):
+            return value.session
+        except (ValueError, TypeError, UnicodeError):
             raise PersonalTelegramTransportError("cloud_session_unavailable") from None
 
 
