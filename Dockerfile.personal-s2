@@ -10,4 +10,4 @@ RUN pip install -c /tmp/runtime.txt fastapi 'uvicorn[standard]' cryptography Pil
 COPY app ./app
 COPY alembic.ini ./
 COPY alembic ./alembic
-CMD ["/bin/sh", "-c", "if [ \"${GATE_S2_BOOTSTRAP_COMMAND_STORE:-false}\" = true ]; then /usr/local/bin/python -m app.personal_telegram.runtime_cli bootstrap-volume || echo s2_runtime_bootstrap_failed; fi; exec uvicorn app.personal_telegram.s2_enrollment_web:app --host 0.0.0.0 --port 8000 --no-access-log"]
+CMD ["uvicorn", "app.personal_telegram.s2_enrollment_web:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

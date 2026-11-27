@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import secrets
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
@@ -379,10 +380,53 @@ class Enrollment:
                 self.password.get_nowait()
 
 
+async def bootstrap_command_store() -> None:
+    """Run the one-shot CLI separately. The web process only logs redacted status."""
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "app.personal_telegram.runtime_cli",
+        "bootstrap-volume",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        try:
+            stdout, _ = await asyncio.wait_for(process.communicate(), timeout=108)
+            result = json.loads(stdout)
+            if not isinstance(result, dict):
+                raise ValueError
+        except (TimeoutError, ValueError):
+            LOG.warning("s2_ru_command_store_bootstrap_no_result")
+            return
+        if (
+            process.returncode == 0
+            and result.get("configured") is True
+            and result.get("runtime_connected") is False
+            and result.get("state") in {"prepared", "already_prepared"}
+        ):
+            LOG.info("s2_ru_command_store_verified_%s", result["state"])
+        else:
+            code = result.get("error_code")
+            safe = (
+                code if isinstance(code, str) and re.fullmatch("[a-z_]{1,80}", code) else "unknown"
+            )
+            LOG.warning("s2_ru_command_store_bootstrap_failed_%s", safe)
+    finally:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     config = Config.read()
     app.state.enrollment = Enrollment(config) if config else None
+    if os.getenv("GATE_S2_BOOTSTRAP_COMMAND_STORE", "").lower() == "true":
+        if config is None:
+            LOG.warning("s2_ru_command_store_bootstrap_configuration_missing")
+        else:
+            await bootstrap_command_store()
     probe = None
     run_id = os.getenv("GATE_S2_VERIFY_SAVED_SESSION", "")
     if config is not None and run_id:
