@@ -1,4 +1,5 @@
 from pathlib import Path
+from time import monotonic, sleep
 
 import pytest
 from cryptography.fernet import Fernet
@@ -6,6 +7,7 @@ from fastapi.testclient import TestClient
 
 pytest.importorskip("telethon")
 
+from app.personal_telegram import s2_enrollment_web as web
 from app.personal_telegram.cloud_worker import TelegramApplication
 from app.personal_telegram.s2_enrollment_web import (
     ENVELOPE,
@@ -15,6 +17,7 @@ from app.personal_telegram.s2_enrollment_web import (
     verify_owner,
 )
 from telethon.tl.types import User
+from telethon.tl.types.auth import SentCode, SentCodeTypeApp
 
 
 @pytest.fixture
@@ -81,4 +84,73 @@ def test_browser_controls_are_owner_only(
         assert "Secure" in response.headers["set-cookie"]
         assert config.access not in response.text
         assert "Показать QR" in client.get("/").text
+        assert "Войти по коду" in client.get("/").text
         assert client.get("/qr").headers["cache-control"] == "no-store, private"
+
+
+def test_phone_only_enrollment_uses_owner_number_and_encrypted_session(
+    config: Config,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = []
+
+    class Session:
+        def save(self):
+            return "fake-mobile-session"
+
+    class Telegram:
+        session = Session()
+
+        async def connect(self):
+            pass
+
+        async def send_code_request(self, phone):
+            calls.append(("request", phone))
+            return SentCode(SentCodeTypeApp(5), "fake-challenge")
+
+        async def sign_in(self, *, phone, code, phone_code_hash):
+            calls.append(("submit", phone, code, phone_code_hash))
+
+        async def get_me(self):
+            return User(id=123, is_self=True, phone=config.phone)
+
+        async def disconnect(self):
+            pass
+
+    def wait_for_page(client: TestClient, phrase: str) -> None:
+        until = monotonic() + 4
+        while monotonic() < until:
+            if phrase in client.get("/").text:
+                return
+            sleep(0.01)
+        pytest.fail(f"Missing expected page state: {phrase}")
+
+    monkeypatch.setattr(Config, "read", staticmethod(lambda: config))
+    monkeypatch.setattr(web, "TelegramClient", lambda *args, **kwargs: Telegram())
+    headers = {"Origin": config.origin}
+    with TestClient(app, base_url=config.origin) as client:
+        assert client.post("/start-code", headers=headers).status_code == 403
+        assert calls == []
+        assert client.post("/unlock", data={"access": config.access}, headers=headers).is_success
+        assert (
+            client.post("/start-code", headers={"Origin": "https://wrong.invalid"}).status_code
+            == 403
+        )
+        assert (
+            client.post("/start-code", headers=headers, follow_redirects=False).status_code == 303
+        )
+        wait_for_page(client, "Telegram отправил код в приложение")
+        assert (
+            client.post("/start-code", headers=headers, follow_redirects=False).status_code == 303
+        )
+        assert client.post("/code", data={"code": "12"}, headers=headers).status_code == 400
+        assert calls == [("request", f"+{config.phone}")]
+        assert (
+            client.post(
+                "/code", data={"code": "01234"}, headers=headers, follow_redirects=False
+            ).status_code
+            == 303
+        )
+        wait_for_page(client, "Российский аккаунт подтверждён Telegram")
+    assert calls[-1] == ("submit", f"+{config.phone}", "01234", "fake-challenge")
+    assert b"fake-mobile-session" in config.cipher.decrypt((config.vault / ENVELOPE).read_bytes())
