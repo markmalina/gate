@@ -18,7 +18,7 @@ from time import monotonic
 from typing import Any, Literal
 from urllib.parse import parse_qs
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from telethon import TelegramClient  # type: ignore[import-untyped]
@@ -37,15 +37,19 @@ from telethon.tl.types.auth import (  # type: ignore[import-untyped]
     SentCodeTypeSms,
 )
 
+from app.application.personal_telegram_transport import PersonalTelegramTransportError
 from app.personal_telegram.cloud_session import SCHEMA
 from app.personal_telegram.cloud_worker import TelegramApplication
+from app.personal_telegram.s2_session_vault import (
+    ENVELOPE,
+    SESSION_REF,
+    VAULT,
+    read_s2_session,
+    require_s2_mount,
+)
 
 COOKIE = "__Host-gate-s2"
 LOG = logging.getLogger("uvicorn.error")
-PROJECT_ID = "4d14a47e-0f3c-47cf-9eb9-893fae7e2044"
-VAULT = Path("/gate-vault")
-ENVELOPE = "ru-session.bin"
-SESSION_REF = "session_gate_s2_ru"
 HEADERS = {
     "Cache-Control": "no-store, private",
     "Content-Security-Policy": (
@@ -99,18 +103,13 @@ class Config:
         phone = os.getenv("GATE_S2_OWNER_PHONE", "")
         access = os.getenv("GATE_S2_ACCESS_KEY", "")
         if (
-            os.getenv("RAILWAY_PROJECT_ID") != PROJECT_ID
-            or os.getenv("RAILWAY_ENVIRONMENT_NAME") != "staging"
-            or os.getenv("RAILWAY_VOLUME_MOUNT_PATH") != str(VAULT)
-            or not re.fullmatch(r"[a-z0-9-]+\.up\.railway\.app", origin)
+            not re.fullmatch(r"[a-z0-9-]+\.up\.railway\.app", origin)
             or not re.fullmatch(r"\+7[0-9]{10}", phone)
             or not re.fullmatch(r"[A-Za-z0-9_-]{43}", access)
         ):
             return None
         try:
-            mounts = Path("/proc/self/mountinfo").read_text().splitlines()
-            if not any(line.split(" ")[4] == str(VAULT) for line in mounts):
-                return None
+            require_s2_mount(os.environ)
             app = TelegramApplication(
                 int(os.environ["GATE_PERSONAL_TELEGRAM_API_ID"]),
                 os.environ["GATE_PERSONAL_TELEGRAM_API_HASH"],
@@ -182,23 +181,7 @@ async def verify_saved_session(config: Config, run_id: str) -> None:
         return
 
     try:
-        with (config.vault / ENVELOPE).open("rb") as handle:
-            raw = handle.read(16_385)
-        if not 0 < len(raw) <= 16_384:
-            raise ValueError("invalid_envelope")
-        payload = json.loads(config.cipher.decrypt(raw))
-        owner_id = payload["owner_user_id"]
-        session = payload["session"]
-        if (
-            payload["schema"] != SCHEMA
-            or payload["api_id"] != config.application.api_id
-            or payload["session_ref"] != SESSION_REF
-            or type(owner_id) is not int
-            or owner_id <= 0
-            or not isinstance(session, str)
-            or not 0 < len(session) <= 4096
-        ):
-            raise ValueError("invalid_envelope")
+        snapshot = read_s2_session(config.vault, config.cipher, api_id=config.application.api_id)
         with (config.vault / f".verify-{run_id}").open("xb") as claim:
             os.fsync(claim.fileno())
         descriptor = os.open(config.vault, os.O_RDONLY | os.O_DIRECTORY)
@@ -208,7 +191,7 @@ async def verify_saved_session(config: Config, run_id: str) -> None:
             os.close(descriptor)
     except FileExistsError:
         return
-    except (OSError, InvalidToken, KeyError, TypeError, ValueError):
+    except (OSError, PersonalTelegramTransportError):
         LOG.warning("s2_ru_saved_session_probe_unavailable")
         return
 
@@ -216,7 +199,7 @@ async def verify_saved_session(config: Config, run_id: str) -> None:
     verified = False
     try:
         client = TelegramClient(
-            StringSession(session),
+            StringSession(snapshot.session),
             config.application.api_id,
             config.application.api_hash,
             receive_updates=False,
@@ -229,7 +212,8 @@ async def verify_saved_session(config: Config, run_id: str) -> None:
             device_model="Gate RU S2",
             app_version="S2 saved session check",
         )
-        del session, payload, raw
+        owner_id = snapshot.owner_user_id
+        del snapshot
         async with asyncio.timeout(20):
             await client.connect()
             verified = verify_owner(await client.get_me(), config.phone) == owner_id
