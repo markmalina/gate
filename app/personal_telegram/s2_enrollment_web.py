@@ -41,6 +41,7 @@ from telethon.tl.types.auth import (  # type: ignore[import-untyped]
 from app.application.personal_telegram_transport import PersonalTelegramTransportError
 from app.personal_telegram.cloud_session import SCHEMA
 from app.personal_telegram.cloud_worker import TelegramApplication
+from app.personal_telegram.command_scope import CommandRuntimeError
 from app.personal_telegram.s2_lifecycle_canary import run_s2_lifecycle_canary
 from app.personal_telegram.s2_session_vault import (
     ENVELOPE,
@@ -445,6 +446,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     LOG.info("s2_ru_lifecycle_verified_twice_and_disconnected")
                 else:
                     LOG.warning("s2_ru_lifecycle_result_invalid")
+            except (CommandRuntimeError, PersonalTelegramTransportError) as exc:
+                code = str(exc)
+                safe = code if re.fullmatch("[a-z_]{1,80}", code) else "unknown"
+                LOG.warning("s2_ru_lifecycle_failed_%s", safe)
             except Exception:
                 LOG.warning("s2_ru_lifecycle_failed")
     probe = None
