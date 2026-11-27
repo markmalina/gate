@@ -1,0 +1,11 @@
+FROM python:3.12-slim@sha256:c3d81d25b3154142b0b42eb1e61300024426268edeb5b5a26dd7ddf64d9daf28
+
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+WORKDIR /app
+
+COPY constraints/runtime.txt /tmp/runtime.txt
+RUN pip install -c /tmp/runtime.txt fastapi 'uvicorn[standard]' cryptography Pillow \
+    'Telethon==1.44.0' 'qrcode==8.2' sqlalchemy
+
+COPY app ./app
+CMD ["uvicorn", "app.personal_telegram.s2_enrollment_web:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
