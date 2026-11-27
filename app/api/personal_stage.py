@@ -43,6 +43,45 @@ from app.infrastructure.database import database_runtime_lifespan
 from app.personal_telegram.command_scope import CommandRuntimeError
 from app.personal_telegram.work_stage import StageJournal, StageSettings
 
+S2_STATUS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "account",
+        "configured",
+        "authenticated",
+        "custody_state",
+        "runtime_connected",
+        "owner_lease_present",
+        "lease_generation",
+        "last_successful_check",
+        "state",
+        "send_enabled",
+        "create_group_enabled",
+        "error_code",
+        "observed_at",
+        "source",
+        "provider_calls",
+    ],
+    "properties": {
+        "account": {"const": "RU"},
+        "configured": {"type": "boolean"},
+        "authenticated": {"type": ["boolean", "null"]},
+        "custody_state": {"type": "string"},
+        "runtime_connected": {"type": "boolean"},
+        "owner_lease_present": {"type": "boolean"},
+        "lease_generation": {"type": "integer", "minimum": 0},
+        "last_successful_check": {"type": ["string", "null"]},
+        "state": {"type": "string"},
+        "send_enabled": {"const": False},
+        "create_group_enabled": {"const": False},
+        "error_code": {"type": ["string", "null"]},
+        "observed_at": {"type": "string"},
+        "source": {"const": "s2_command_store"},
+        "provider_calls": {"const": 0},
+    },
+}
+
 logger = logging.getLogger("uvicorn.error")
 
 
@@ -110,9 +149,12 @@ def create_app(config: StageSettings | None = None) -> FastAPI:
             },
         }
     )
+    if stage.s2_status_url:
+        ready_schema["required"].append("s2_status")
+        ready_schema["properties"]["s2_status"] = S2_STATUS_SCHEMA
     ready["description"] = (
-        "Report journal readiness and issue a short-lived reference to the approved "
-        "synthetic target for this client."
+        "Report journal readiness, protected read-only S2 runtime status when configured, "
+        "and a short-lived reference to the approved synthetic target for this client."
     )
     catalog.append(file_descriptor())
 

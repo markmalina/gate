@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import base64
 import hmac
+import re
 from typing import Any, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
+import httpx
 from cryptography.fernet import Fernet
 from pydantic import AwareDatetime, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -56,6 +58,8 @@ class StageSettings(BaseSettings):
     grant_expires_at: AwareDatetime
     approval_ref: str
     file_host: str = ""
+    s2_status_url: str = ""
+    s2_status_token: SecretStr = SecretStr("")
     workspace_claim: str = "gate_workspace_id"
     account_ids_claim: str = "gate_account_ids"
     project_ids_claim: str = "gate_project_ids"
@@ -91,6 +95,21 @@ class StageSettings(BaseSettings):
             and self.file_host.endswith((".oaiusercontent.com", ".blob.core.windows.net"))
         ):
             raise ValueError("Expected one exact Work file host")
+        status_url = urlsplit(self.s2_status_url)
+        status_token = self.s2_status_token.get_secret_value()
+        if bool(self.s2_status_url) != bool(status_token):
+            raise ValueError("Configure both S2 status URL and token")
+        if self.s2_status_url and (
+            status_url.scheme != "https"
+            or status_url.hostname != "gate-ru-enrollment-staging.up.railway.app"
+            or status_url.path != "/s2/work-status"
+            or status_url.username is not None
+            or status_url.password is not None
+            or status_url.query
+            or status_url.fragment
+            or re.fullmatch(r"[A-Za-z0-9_-]{43}", status_token) is None
+        ):
+            raise ValueError("Expected the exact protected S2 status endpoint")
         Fernet(self.master_key.get_secret_value().encode())
         self.scope().validate()
         oauth_client_namespace(self.issuer, self.client_id)
@@ -144,6 +163,8 @@ class StageJournal(PersonalCommandService):
             frozenset({FIXTURE_PEER.key}),
             config.grant_expires_at,
         )
+        self.s2_status_url = config.s2_status_url
+        self.s2_status_token = config.s2_status_token.get_secret_value()
 
     def for_client(self, principal: Principal) -> StageJournal:
         if personal_client_namespace(principal) != self.grant.client_namespace:
@@ -157,6 +178,10 @@ class StageJournal(PersonalCommandService):
         result = await super().readiness(principal=principal)
         await self.check_binding()
         result["journal_ready"] = True
+        if self.s2_status_url:
+            result["s2_status"] = await read_s2_status(
+                self.s2_status_url, self.s2_status_token
+            )
         if "gate:personal:send_text" in principal.scopes:
             try:
                 peer = await self.issue_peer_reference(
@@ -189,6 +214,67 @@ class StageJournal(PersonalCommandService):
             and row.lease_owner is None
         ):
             raise CommandRuntimeError("synthetic_binding_required")
+
+
+S2_STATUS_KEYS = {
+    "account",
+    "configured",
+    "authenticated",
+    "custody_state",
+    "runtime_connected",
+    "owner_lease_present",
+    "lease_generation",
+    "last_successful_check",
+    "state",
+    "send_enabled",
+    "create_group_enabled",
+    "error_code",
+    "observed_at",
+    "source",
+    "provider_calls",
+}
+
+
+async def read_s2_status(url: str, token: str) -> dict[str, Any]:
+    """Fetch the fixed redacted bridge. The response cannot grant command execution."""
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=False,
+            timeout=httpx.Timeout(6),
+            trust_env=False,
+        ) as client:
+            response = await client.get(
+                url,
+                headers={"Authorization": "Bearer " + token, "Accept": "application/json"},
+            )
+        if response.status_code != 200:
+            raise ValueError
+        value = response.json()
+    except (httpx.HTTPError, ValueError, TypeError):
+        raise CommandRuntimeError("s2_status_unavailable") from None
+    if (
+        not isinstance(value, dict)
+        or set(value) != S2_STATUS_KEYS
+        or value.get("account") != "RU"
+        or type(value.get("configured")) is not bool
+        or value.get("authenticated") not in {True, None}
+        or not isinstance(value.get("custody_state"), str)
+        or type(value.get("runtime_connected")) is not bool
+        or type(value.get("owner_lease_present")) is not bool
+        or type(value.get("lease_generation")) is not int
+        or value.get("last_successful_check") is not None
+        and not isinstance(value.get("last_successful_check"), str)
+        or not isinstance(value.get("state"), str)
+        or value.get("send_enabled") is not False
+        or value.get("create_group_enabled") is not False
+        or value.get("error_code") is not None
+        and not isinstance(value.get("error_code"), str)
+        or not isinstance(value.get("observed_at"), str)
+        or value.get("source") != "s2_command_store"
+        or value.get("provider_calls") != 0
+    ):
+        raise CommandRuntimeError("s2_status_invalid")
+    return value
 
 
 async def provision(config: StageSettings) -> None:
