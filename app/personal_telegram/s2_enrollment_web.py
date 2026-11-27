@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
 from time import monotonic
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import parse_qs
 
 from cryptography.fernet import Fernet
@@ -23,10 +23,19 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from telethon import TelegramClient  # type: ignore[import-untyped]
 from telethon.errors import (  # type: ignore[import-untyped]
+    FloodWaitError,
     PasswordHashInvalidError,
+    PhoneCodeExpiredError,
+    PhoneCodeInvalidError,
     SessionPasswordNeededError,
 )
 from telethon.sessions import StringSession  # type: ignore[import-untyped]
+from telethon.tl.types.auth import (  # type: ignore[import-untyped]
+    SentCode,
+    SentCodeTypeApp,
+    SentCodeTypeEmailCode,
+    SentCodeTypeSms,
+)
 
 from app.personal_telegram.cloud_session import SCHEMA
 from app.personal_telegram.cloud_worker import TelegramApplication
@@ -56,7 +65,16 @@ ACCESS = (
     '<br><input name="access" type="password" required autocomplete="off" maxlength="128">'
     "</label><br><button>Открыть</button></form>"
 )
-START = '<form method="post" action="/start"><button>Показать QR</button></form>'
+START = (
+    '<form method="post" action="/start-code"><button>Войти по коду</button></form>'
+    '<form method="post" action="/start"><button>Показать QR</button></form>'
+)
+CODE = (
+    '<form method="post" action="/code"><label>Код входа'
+    '<br><input name="code" type="password" inputmode="numeric" '
+    'required autocomplete="one-time-code" maxlength="12"></label>'
+    "<br><button>Подтвердить</button></form>"
+)
 PASSWORD = (
     '<form method="post" action="/confirm"><label>Пароль двухэтапной проверки Telegram'
     '<br><input name="password" type="password" required autocomplete="off" maxlength="256">'
@@ -162,9 +180,13 @@ class Enrollment:
         self.cookie = ""
         self.deadline = 0.0
         self.unlock_after = 0.0
+        self.next_code_after = 0.0
         self.attempts = 0
         self.state = "ready"
         self.image: bytes | None = None
+        self.code_length = 0
+        self.code_hint = ""
+        self.code: asyncio.Queue[str] = asyncio.Queue(1)
         self.password: asyncio.Queue[str] = asyncio.Queue(1)
         self.task: asyncio.Task[None] | None = None
 
@@ -179,7 +201,50 @@ class Enrollment:
     def enrolled(self) -> bool:
         return (self.config.vault / ENVELOPE).is_file()
 
-    async def run(self) -> None:
+    async def sign_in_by_code(self, client: Any) -> None:
+        phone = f"+{self.config.phone}"
+        sent = await client.send_code_request(phone)
+        if not isinstance(sent, SentCode) or not 4 <= getattr(sent.type, "length", 0) <= 12:
+            raise ValueError("unsupported_code_delivery")
+        if isinstance(sent.type, SentCodeTypeApp):
+            self.code_hint = "Telegram отправил код в приложение. Открой российский аккаунт."
+        elif isinstance(sent.type, SentCodeTypeSms):
+            self.code_hint = "Telegram отправил код по SMS на российский номер."
+        elif isinstance(sent.type, SentCodeTypeEmailCode):
+            self.code_hint = "Telegram отправил код на почту, привязанную к аккаунту."
+        else:
+            raise ValueError("unsupported_code_delivery")
+        self.code_length = sent.type.length
+        for attempt in range(3):
+            self.state = "code_retry" if attempt else "code"
+            value = await self.code.get()
+            try:
+                await client.sign_in(phone=phone, code=value, phone_code_hash=sent.phone_code_hash)
+                return
+            except PhoneCodeInvalidError:
+                await asyncio.sleep(1)
+            finally:
+                del value
+        raise ValueError("code_attempts")
+
+    async def sign_in_by_qr(self, client: Any) -> None:
+        token = await client.qr_login()
+        waiter = asyncio.create_task(token.wait())
+        try:
+            await asyncio.sleep(0)
+            image = io.BytesIO()
+            import_module("qrcode").make(token.url).save(image, format="PNG")
+            self.image = image.getvalue()
+            self.state = "qr"
+            await waiter
+        finally:
+            if not waiter.done():
+                waiter.cancel()
+                with suppress(asyncio.CancelledError):
+                    await waiter
+            self.image = None
+
+    async def run(self, method: Literal["qr", "code"] = "qr") -> None:
         client = TelegramClient(
             StringSession(),
             self.config.application.api_id,
@@ -199,19 +264,14 @@ class Enrollment:
         try:
             async with asyncio.timeout(180):
                 await client.connect()
-                token = await client.qr_login()
-                waiter = asyncio.create_task(token.wait())
                 try:
-                    await asyncio.sleep(0)
-                    image = io.BytesIO()
-                    import_module("qrcode").make(token.url).save(image, format="PNG")
-                    self.image = image.getvalue()
-                    self.state = "qr"
-                    await waiter
+                    if method == "code":
+                        await self.sign_in_by_code(client)
+                    else:
+                        await self.sign_in_by_qr(client)
                     acted = True
                 except SessionPasswordNeededError:
                     acted = True
-                    self.image = None
                     for _ in range(3):
                         self.state = "password"
                         value = await self.password.get()
@@ -225,21 +285,22 @@ class Enrollment:
                         break
                     else:
                         raise ValueError("password_attempts")
-                finally:
-                    if not waiter.done():
-                        waiter.cancel()
-                        with suppress(asyncio.CancelledError):
-                            await waiter
-                    self.image = None
                 owner = verify_owner(await client.get_me(), self.config.phone)
                 save_envelope(self.config, owner_id=owner, session=client.session.save())
                 stored = True
                 self.state = "bound"
                 LOG.info("s2_ru_mtproto_owner_verified")
-        except TimeoutError:
+        except (TimeoutError, PhoneCodeExpiredError):
             self.state = "expired"
+        except FloodWaitError as exc:
+            self.next_code_after = max(self.next_code_after, monotonic() + exc.seconds)
+            self.state = "code_throttled"
         except ValueError as exc:
-            self.state = "mismatch" if str(exc) == "owner_mismatch" else "failed"
+            self.state = {
+                "owner_mismatch": "mismatch",
+                "unsupported_code_delivery": "unsupported_code_delivery",
+                "code_attempts": "code_failed",
+            }.get(str(exc), "failed")
         except Exception:
             self.state = "failed"
         finally:
@@ -249,6 +310,10 @@ class Enrollment:
             with suppress(Exception):
                 await asyncio.wait_for(client.disconnect(), timeout=7)
             self.image = None
+            self.code_length = 0
+            self.code_hint = ""
+            if not self.code.empty():
+                self.code.get_nowait()
             if not self.password.empty():
                 self.password.get_nowait()
 
@@ -311,7 +376,7 @@ async def index(request: Request) -> Response:
     if current is None:
         return page("Стенд запущен. Ожидает защищённые настройки Railway.")
     if active(request) is None:
-        return page("Доступ владельца", ACCESS)
+        return page("Доступ владельца. Для входа по коду достаточно одного телефона.", ACCESS)
     if current.enrolled:
         return page("Российский аккаунт подтверждён Telegram. Сессия сохранена зашифрованной.")
     if current.state == "qr":
@@ -322,14 +387,24 @@ async def index(request: Request) -> Response:
         )
     if current.state == "password":
         return page("Telegram запросил пароль двухэтапной проверки.", PASSWORD)
+    if current.state in {"code", "code_retry"}:
+        message = (
+            "Код не подошёл. Сверь его с сообщением Telegram."
+            if (current.state == "code_retry")
+            else current.code_hint
+        )
+        return page(message, CODE)
     if current.task and not current.task.done():
         return page("Telegram обрабатывает запрос.", refresh=True)
     return page(
         {
             "ready": "Подключение российского аккаунта.",
-            "expired": "Время QR истекло. Можно создать новый QR.",
+            "expired": "Время подтверждения истекло. Запусти вход заново.",
             "mismatch": "Telegram подтвердил другой номер. Проверь активный аккаунт на телефоне.",
-            "failed": "Telegram не подтвердил вход. Можно повторить один раз.",
+            "failed": "Telegram не подтвердил вход. Можно повторить.",
+            "unsupported_code_delivery": "Telegram предложил другой способ входа. Выбери QR.",
+            "code_throttled": "Telegram ограничил запросы кода. Подожди перед повтором.",
+            "code_failed": "Три введённых кода не подошли. Запроси новый код.",
         }.get(current.state, "Подключение недоступно."),
         START,
     )
@@ -359,10 +434,12 @@ async def unlock(request: Request) -> Response:
 
 
 @app.post("/start")
+@app.post("/start-code")
 async def start(request: Request) -> Response:
     current = active(request)
     if current is None or request.headers.get("origin") != current.config.origin:
         return page("Открой стенд и введи ключ доступа.", status=403)
+    method: Literal["qr", "code"] = "code" if request.url.path == "/start-code" else "qr"
     async with current.lock:
         if current.enrolled:
             return RedirectResponse("/", status_code=303, headers=HEADERS)
@@ -370,9 +447,14 @@ async def start(request: Request) -> Response:
             return RedirectResponse("/", status_code=303, headers=HEADERS)
         if current.attempts >= 4 or current.deadline - monotonic() < 180:
             return page("Окно проверки закрыто.", status=409)
+        if method == "code":
+            now = monotonic()
+            if now < current.next_code_after:
+                return page("Подожди перед следующим запросом кода.", status=429)
+            current.next_code_after = now + 60
         current.attempts += 1
         current.state = "starting"
-        current.task = asyncio.create_task(current.run())
+        current.task = asyncio.create_task(current.run(method))
     return RedirectResponse("/", status_code=303, headers=HEADERS)
 
 
@@ -382,6 +464,22 @@ async def qr(request: Request) -> Response:
     if current is None or current.image is None or current.state != "qr":
         return Response(status_code=404, headers=HEADERS)
     return Response(current.image, media_type="image/png", headers=HEADERS)
+
+
+@app.post("/code")
+async def confirm_code(request: Request) -> Response:
+    current = active(request)
+    if current is None:
+        return page("Сеанс истёк.", status=403)
+    value = await form_value(request, current, "code")
+    async with current.lock:
+        if current.state not in {"code", "code_retry"} or current.code.full():
+            return page("Подтверждение пока недоступно.", status=409)
+        if not re.fullmatch(rf"[0-9]{{{current.code_length}}}", value):
+            return page("Проверь число цифр в коде.", CODE, status=400)
+        current.state = "verifying"
+        current.code.put_nowait(value)
+    return RedirectResponse("/", status_code=303, headers=HEADERS)
 
 
 @app.post("/confirm")
