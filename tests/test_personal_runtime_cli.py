@@ -25,6 +25,10 @@ from app.personal_telegram.runtime_cli import (
     require_s2_database,
     run,
 )
+from app.personal_telegram.s2_lifecycle_canary import (
+    claim_canary,
+    unavailable_database_environment,
+)
 from app.personal_telegram.s2_session_vault import ENVELOPE, SESSION_REF, read_s2_session
 from cryptography.fernet import Fernet
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -196,3 +200,24 @@ def test_s2_database_scope_refuses_public_hosts_and_other_databases():
     ):
         with pytest.raises(CommandRuntimeError, match="s2_runtime_database_scope_mismatch"):
             require_s2_database(dsn)
+
+
+def test_lifecycle_claim_is_durable_and_database_loss_probe_preserves_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(
+        "app.personal_telegram.s2_lifecycle_canary.require_s2_mount", lambda environment: None
+    )
+    environment = {"RAILWAY_VOLUME_MOUNT_PATH": "/gate-vault"}
+    claim_canary("fixture-lifecycle", environment, vault=tmp_path)
+    with pytest.raises(CommandRuntimeError, match="s2_lifecycle_run_already_spent"):
+        claim_canary("fixture-lifecycle", environment, vault=tmp_path)
+    with pytest.raises(CommandRuntimeError, match="s2_lifecycle_run_invalid"):
+        claim_canary("not valid", environment, vault=tmp_path)
+
+    dsn = "postgresql+asyncpg://gate_s2:real@gate-ru-store.railway.internal/gate_s2_ru"
+    changed = unavailable_database_environment(
+        {"GATE_PERSONAL_RUNTIME_DATABASE_URL": dsn}
+    )["GATE_PERSONAL_RUNTIME_DATABASE_URL"]
+    require_s2_database(changed)
+    assert changed != dsn and "real" not in changed
