@@ -41,6 +41,7 @@ from telethon.tl.types.auth import (  # type: ignore[import-untyped]
 from app.application.personal_telegram_transport import PersonalTelegramTransportError
 from app.personal_telegram.cloud_session import SCHEMA
 from app.personal_telegram.cloud_worker import TelegramApplication
+from app.personal_telegram.s2_lifecycle_canary import run_s2_lifecycle_canary
 from app.personal_telegram.s2_session_vault import (
     ENVELOPE,
     SESSION_REF,
@@ -427,6 +428,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             LOG.warning("s2_ru_command_store_bootstrap_configuration_missing")
         else:
             await bootstrap_command_store()
+    lifecycle_run = os.getenv("GATE_S2_RUNTIME_CANARY", "")
+    if lifecycle_run:
+        if config is None:
+            LOG.warning("s2_ru_lifecycle_configuration_missing")
+        else:
+            try:
+                result = await run_s2_lifecycle_canary(lifecycle_run, os.environ)
+                if (
+                    result.get("state") == "verified_and_disconnected"
+                    and result.get("overlap_rejected") is True
+                    and result.get("database_loss_failed_closed") is True
+                    and result.get("telegram_owner_checks") == 2
+                    and result.get("outbound_messages") == 0
+                ):
+                    LOG.info("s2_ru_lifecycle_verified_twice_and_disconnected")
+                else:
+                    LOG.warning("s2_ru_lifecycle_result_invalid")
+            except Exception:
+                LOG.warning("s2_ru_lifecycle_failed")
     probe = None
     run_id = os.getenv("GATE_S2_VERIFY_SAVED_SESSION", "")
     if config is not None and run_id:

@@ -96,6 +96,33 @@ def test_browser_controls_are_owner_only(
         assert client.get("/qr").headers["cache-control"] == "no-store, private"
 
 
+def test_lifecycle_canary_runs_only_from_explicit_startup_grant(
+    config: Config,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    calls = []
+
+    async def canary(run_id, environment):
+        calls.append((run_id, environment["GATE_S2_RUNTIME_CANARY"]))
+        return {
+            "state": "verified_and_disconnected",
+            "overlap_rejected": True,
+            "database_loss_failed_closed": True,
+            "telegram_owner_checks": 2,
+            "outbound_messages": 0,
+        }
+
+    monkeypatch.setattr(Config, "read", staticmethod(lambda: config))
+    monkeypatch.setattr(web, "run_s2_lifecycle_canary", canary)
+    monkeypatch.setenv("GATE_S2_RUNTIME_CANARY", "fixture-lifecycle")
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        with TestClient(app, base_url=config.origin) as client:
+            assert client.get("/health").is_success
+    assert calls == [("fixture-lifecycle", "fixture-lifecycle")]
+    assert "s2_ru_lifecycle_verified_twice_and_disconnected" in caplog.text
+
+
 def test_phone_only_enrollment_uses_owner_number_and_encrypted_session(
     config: Config,
     monkeypatch: pytest.MonkeyPatch,
