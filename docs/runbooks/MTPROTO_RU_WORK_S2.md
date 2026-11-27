@@ -85,3 +85,27 @@ PostgreSQL 17 базы `gate_s2_ru` на `gate-ru-store.railway.internal`. Он�
 диспетчера обновлений или команд, не читает диалоги и не умеет отправлять
 сообщения, создавать группы или вызывать бота. Повтор того же идентификатора
 запрещён. После подтверждения переменную выключают без нового развёртывания.
+
+## Защищённый статус в ChatGPT Work
+
+S2 открывает `/s2/work-status` только с отдельным 256-битным bearer token из
+Railway variables. Ответ читает command store через `inspect --s2-owner`, не
+подключается к Telegram и содержит только account RU, configured/authenticated,
+lease generation, health, last successful check и явные нули разрешений на
+отправку и создание групп. Ответы не кэшируются. Неверный токен получает 404.
+
+Owner-OAuth S1 MCP хранит точный URL и тот же token в переменных
+`GATE_PERSONAL_STAGE_S2_STATUS_URL` и
+`GATE_PERSONAL_STAGE_S2_STATUS_TOKEN`. Его существующая `readiness` сохраняет
+синтетический `runtime_connected=false` для command dispatcher и отдельно
+возвращает вложенный `s2_status`. Поэтому status не активирует очередь или
+Telegram writer. При недоступности bridge вызов завершается
+`s2_status_unavailable`, а не использует старое состояние.
+
+Для живой приёмки один уникальный
+`GATE_S2_WORK_STATUS_ACCEPTANCE` запускает bounded read-only worker после
+неизменяемого claim на томе. Work должен увидеть `s2_status.runtime_connected`
+сначала false, затем true с новым `last_successful_check`, а после очистки флага
+и перезапуска снова false. Процесс при завершении приложения обязан подтвердить
+disconnect. На всём этапе исходящие сообщения, диалоги, группы и bot actions
+остаются недоступны.

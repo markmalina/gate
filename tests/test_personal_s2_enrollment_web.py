@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from dataclasses import replace
 from pathlib import Path
 from time import monotonic, sleep
 
@@ -121,6 +122,77 @@ def test_lifecycle_canary_runs_only_from_explicit_startup_grant(
             assert client.get("/health").is_success
     assert calls == [("fixture-lifecycle", "fixture-lifecycle")]
     assert "s2_ru_lifecycle_verified_twice_and_disconnected" in caplog.text
+
+
+def test_work_status_is_bearer_protected_and_provider_free(
+    config: Config,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secured = replace(config, status_token="S" * 43)
+    expected = {
+        "account": "RU",
+        "configured": True,
+        "authenticated": None,
+        "custody_state": "prepared",
+        "runtime_connected": False,
+        "owner_lease_present": False,
+        "lease_generation": 4,
+        "last_successful_check": "2026-11-27T21:15:57+00:00",
+        "state": "disconnected",
+        "send_enabled": False,
+        "create_group_enabled": False,
+        "error_code": "runtime_not_ready",
+        "observed_at": "2026-11-27T21:20:00+00:00",
+        "source": "s2_command_store",
+        "provider_calls": 0,
+    }
+
+    async def read_status(environment):
+        assert environment
+        return expected
+
+    monkeypatch.setattr(Config, "read", staticmethod(lambda: secured))
+    monkeypatch.setattr(web, "read_s2_work_status", read_status)
+    with TestClient(app, base_url=secured.origin) as client:
+        assert client.get("/s2/work-status").status_code == 404
+        assert (
+            client.get(
+                "/s2/work-status", headers={"Authorization": "Bearer " + "X" * 43}
+            ).status_code
+            == 404
+        )
+        response = client.get(
+            "/s2/work-status", headers={"Authorization": "Bearer " + secured.status_token}
+        )
+    assert response.status_code == 200 and response.json() == expected
+    assert response.headers["cache-control"] == "no-store, private"
+
+
+def test_status_acceptance_worker_is_bounded_by_app_lifespan(
+    config: Config,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secured = replace(config, status_token="S" * 43)
+    worker = object()
+    calls = []
+
+    async def start(run_id, environment):
+        calls.append(("start", run_id, environment["GATE_S2_WORK_STATUS_ACCEPTANCE"]))
+        return worker
+
+    async def stop(process):
+        calls.append(("stop", process))
+
+    monkeypatch.setattr(Config, "read", staticmethod(lambda: secured))
+    monkeypatch.setattr(web, "start_s2_status_worker", start)
+    monkeypatch.setattr(web, "stop_s2_status_worker", stop)
+    monkeypatch.setenv("GATE_S2_WORK_STATUS_ACCEPTANCE", "fixture-work-status")
+    with TestClient(app, base_url=secured.origin) as client:
+        assert client.get("/health").is_success
+    assert calls == [
+        ("start", "fixture-work-status", "fixture-work-status"),
+        ("stop", worker),
+    ]
 
 
 def test_phone_only_enrollment_uses_owner_number_and_encrypted_session(

@@ -94,14 +94,16 @@ async def _completed(
     return code, result
 
 
-async def _start_worker(environment: Mapping[str, str]) -> asyncio.subprocess.Process:
+async def _start_worker(
+    environment: Mapping[str, str], *, seconds: int = 120
+) -> asyncio.subprocess.Process:
     return await asyncio.create_subprocess_exec(
         sys.executable,
         "-m",
         "app.personal_telegram.runtime_cli",
         "run",
         "--seconds",
-        "120",
+        str(seconds),
         "--s2-owner",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
@@ -154,6 +156,27 @@ async def _ensure_stopped(process: asyncio.subprocess.Process | None) -> None:
     except TimeoutError:
         process.kill()
         await process.wait()
+
+
+async def start_s2_status_worker(
+    run_id: str, environment: Mapping[str, str]
+) -> asyncio.subprocess.Process:
+    """Start one bounded owner worker and return only after DB status reports ready."""
+    claim_canary(run_id, environment)
+    enabled = dict(environment)
+    enabled["GATE_PERSONAL_RUNTIME_ENABLED"] = "true"
+    process = await _start_worker(enabled, seconds=300)
+    try:
+        await _wait_ready(enabled)
+    except Exception:
+        await _ensure_stopped(process)
+        raise
+    return process
+
+
+async def stop_s2_status_worker(process: asyncio.subprocess.Process) -> None:
+    """Stop an acceptance worker only after its client reports a clean disconnect."""
+    await _stop_worker(process)
 
 
 async def run_s2_lifecycle_canary(
