@@ -61,9 +61,10 @@ PostgreSQL 17 базы `gate_s2_ru` на `gate-ru-store.railway.internal`. Он�
 
 На первом запуске образа `Dockerfile.personal-s2` оператор выставляет
 `GATE_S2_BOOTSTRAP_COMMAND_STORE=true`. Образ вызывает CLI в отдельном
-процессе до запуска веб-приложения. Успех подтверждает вывод
-`configured=true, state=prepared, runtime_connected=false`, повтор на той же
-сессии даёт `already_prepared`. Другая сессия не перезаписывает привязку.
+процессе при запуске стенда. Успех подтверждает отметка
+`s2_ru_command_store_verified_prepared` после чтения записи из базы,
+повтор на той же сессии даёт `s2_ru_command_store_verified_already_prepared`.
+Другая сессия не перезаписывает привязку.
 После успешной сверки выключить bootstrap. Для последующего запуска рабочего
 процесса на этом стенде команды `inspect --s2-owner` и `run --s2-owner`
 получают ожидаемый Telegram ID из того же тома.
