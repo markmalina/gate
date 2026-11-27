@@ -65,6 +65,7 @@ async def _completed(
     *,
     seconds: int = 20,
     timeout: float = 30,
+    allow_redacted_failure: bool = False,
 ) -> tuple[int, dict[str, Any]]:
     arguments = [sys.executable, "-m", "app.personal_telegram.runtime_cli", action]
     if action == "run":
@@ -82,7 +83,15 @@ async def _completed(
         process.kill()
         await process.wait()
         raise CommandRuntimeError("s2_lifecycle_process_timeout") from None
-    return int(process.returncode or 0), _decode(stdout)
+    code = int(process.returncode or 0)
+    try:
+        result = _decode(stdout)
+    except CommandRuntimeError:
+        if allow_redacted_failure and code != 0:
+            result = {"state": "failed", "error_code": "runtime_configuration_failed"}
+        else:
+            raise
+    return code, result
 
 
 async def _start_worker(environment: Mapping[str, str]) -> asyncio.subprocess.Process:
@@ -159,7 +168,11 @@ async def run_s2_lifecycle_canary(
     if code != 0 or initial.get("configured") is not True or initial.get("runtime_connected"):
         raise CommandRuntimeError("s2_lifecycle_initial_state_invalid")
 
-    code, unavailable = await _completed("inspect", unavailable_database_environment(enabled))
+    code, unavailable = await _completed(
+        "inspect",
+        unavailable_database_environment(enabled),
+        allow_redacted_failure=True,
+    )
     if (
         code == 0
         or unavailable.get("state") != "failed"
