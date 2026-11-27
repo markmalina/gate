@@ -448,7 +448,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     LOG.warning("s2_ru_lifecycle_result_invalid")
             except (CommandRuntimeError, PersonalTelegramTransportError) as exc:
                 code = str(exc)
-                safe = code if re.fullmatch("[a-z_]{1,80}", code) else "unknown"
+                safe = code if re.fullmatch("[a-z0-9_]{1,80}", code) else "unknown"
                 LOG.warning("s2_ru_lifecycle_failed_%s", safe)
             except Exception:
                 LOG.warning("s2_ru_lifecycle_failed")
