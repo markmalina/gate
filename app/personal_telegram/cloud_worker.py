@@ -1,8 +1,4 @@
-"""One long-lived, command-only RU connection; not wired to web startup.
-
-This first activation boundary has no Telegram mutation or history dispatcher.
-The V2 all-writer guard and fresh delegation registry must precede those paths.
-"""
+"""One long-lived RU connection with an optional single-operation dispatcher."""
 
 from __future__ import annotations
 
@@ -13,8 +9,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
+from app.application.personal_telegram_transport import ProviderOutcome, ProviderSendReceipt
 from app.personal_telegram.command_scope import CommandRuntimeError, utc_now
 from app.personal_telegram.command_store import LeaseToken, SqlCommandStore
+from app.personal_telegram.local_runtime import _confirmed_message_id
+from app.personal_telegram.saved_messages_dispatch import SavedMessagesDispatcher
 from app.personal_telegram.session_persistence import SessionCipher, open_encrypted_session
 
 
@@ -22,6 +21,7 @@ class RuntimeClient(Protocol):
     async def connect(self) -> None: ...
     async def is_user_authorized(self) -> bool: ...
     async def owner_id(self) -> int: ...
+    async def send_saved_message(self, text: str, random_id: int) -> ProviderSendReceipt: ...
     async def disconnect(self) -> None: ...
     def is_connected(self) -> bool: ...
 
@@ -41,7 +41,7 @@ class TelegramApplication:
 
 
 class TelethonRuntimeClient:
-    """Small private client port: no raw RPC, login, send or update listeners."""
+    """Private client port for owner verification and dispatch to its own Saved Messages."""
 
     def __init__(self, session: Any, application: TelegramApplication) -> None:
         application.validate()
@@ -72,6 +72,21 @@ class TelethonRuntimeClient:
             raise CommandRuntimeError("telegram_owner_unavailable")
         return int(owner.id)
 
+    async def send_saved_message(self, text: str, random_id: int) -> ProviderSendReceipt:
+        from telethon import functions, types
+
+        request = functions.messages.SendMessageRequest(
+            peer=types.InputPeerSelf(),
+            message=text,
+            random_id=random_id,
+            no_webpage=True,
+        )
+        response = await self._client(request)
+        message_id = _confirmed_message_id(response, random_id)
+        if message_id is None:
+            return ProviderSendReceipt(ProviderOutcome.UNKNOWN, None, None)
+        return ProviderSendReceipt(ProviderOutcome.SENT, f"telegram_{message_id}", True)
+
     async def disconnect(self) -> None:
         await self._client.disconnect()
 
@@ -95,6 +110,7 @@ class RuCloudWorker:
         expected_provider_user_id: int,
         client_factory: Callable[[Any], RuntimeClient],
         enabled: bool = False,
+        saved_messages: SavedMessagesDispatcher | None = None,
         lease_ttl: timedelta = timedelta(seconds=30),
         heartbeat_seconds: float = 5,
         startup_timeout: float = 10,
@@ -117,6 +133,7 @@ class RuCloudWorker:
         self.expected_owner = expected_provider_user_id
         self.client_factory = client_factory
         self.enabled = enabled
+        self.saved_messages = saved_messages
         self.ttl = lease_ttl
         self.heartbeat = heartbeat_seconds
         self.startup_timeout = startup_timeout
@@ -145,6 +162,10 @@ class RuCloudWorker:
                     ttl=self.ttl,
                     health="connecting",
                 )
+                if self.saved_messages is not None and (
+                    stop.is_set() or self.clock() >= self.saved_messages.approval.expires_at
+                ):
+                    raise CommandRuntimeError("saved_messages_approval_inactive")
                 client = self.client_factory(session)
                 await self._connect_verified(client)
                 await self.store.renew_owner(
@@ -153,6 +174,19 @@ class RuCloudWorker:
 
             await asyncio.wait_for(startup(), self.startup_timeout)
             while not stop.is_set():
+                if self.saved_messages is not None:
+                    if client is None or not client.is_connected():
+                        raise CommandRuntimeError("telegram_connection_lost")
+                    status = await self.saved_messages.dispatch_once(
+                        self.store,
+                        token,
+                        verified_owner_id=self.expected_owner,
+                        send=client.send_saved_message,
+                        clock=self.clock,
+                        stop=stop,
+                    )
+                    if status is not None:
+                        break
                 try:
                     await asyncio.wait_for(stop.wait(), self.heartbeat)
                 except TimeoutError:

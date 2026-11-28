@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -731,21 +732,34 @@ class SendAttempt(Base):
 
 
 class PersonalTelegramSendFence(Base):
-    """One shared Business/personal draft fence; no session or message plaintext."""
+    """Shared Business/personal destination fence; no session or message plaintext."""
 
     __tablename__ = "personal_telegram_send_fences"
     __table_args__ = (
         UniqueConstraint("reply_draft_id", name="uq_personal_send_fences_draft"),
         UniqueConstraint("idempotency_key", name="uq_personal_send_fences_key"),
         Index("ix_personal_send_fences_conversation_status", "conversation_id", "status"),
+        Index(
+            "ix_personal_send_fences_physical_peer_status",
+            "account_id",
+            "physical_peer_key",
+            "status",
+        ),
+        CheckConstraint(
+            "(reply_draft_id IS NULL) = (conversation_id IS NULL)",
+            name="ck_personal_send_fence_optional_draft",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    reply_draft_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("reply_drafts.id"), nullable=False)
-    conversation_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("conversations.id"), nullable=False
+    reply_draft_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("reply_drafts.id"), nullable=True
+    )
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("conversations.id"), nullable=True
     )
     account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    physical_peer_key: Mapped[str] = mapped_column(String(64), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     actor_ref: Mapped[str] = mapped_column(String(128), nullable=False)
     session_ref: Mapped[str] = mapped_column(String(128), nullable=False)

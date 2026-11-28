@@ -41,30 +41,76 @@ from app.core.mcp_oauth import McpOAuthError, _decode_access_token, authenticate
 from app.core.mcp_security import Principal
 from app.infrastructure.database import database_runtime_lifespan
 from app.personal_telegram.command_scope import CommandRuntimeError
+from app.personal_telegram.s3_stage import S3StageJournal, S3StageSettings, load_s3_stage
 from app.personal_telegram.work_stage import StageJournal, StageSettings
+
+S2_STATUS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "account",
+        "configured",
+        "authenticated",
+        "custody_state",
+        "runtime_connected",
+        "owner_lease_present",
+        "lease_generation",
+        "last_successful_check",
+        "state",
+        "send_enabled",
+        "create_group_enabled",
+        "error_code",
+        "observed_at",
+        "source",
+        "provider_calls",
+    ],
+    "properties": {
+        "account": {"const": "RU"},
+        "configured": {"type": "boolean"},
+        "authenticated": {"type": ["boolean", "null"]},
+        "custody_state": {"type": "string"},
+        "runtime_connected": {"type": "boolean"},
+        "owner_lease_present": {"type": "boolean"},
+        "lease_generation": {"type": "integer", "minimum": 0},
+        "last_successful_check": {"type": ["string", "null"]},
+        "state": {"type": "string"},
+        "send_enabled": {"const": False},
+        "create_group_enabled": {"const": False},
+        "error_code": {"type": ["string", "null"]},
+        "observed_at": {"type": "string"},
+        "source": {"const": "s2_command_store"},
+        "provider_calls": {"const": 0},
+    },
+}
 
 logger = logging.getLogger("uvicorn.error")
 
 
 async def _record_command_result(
-    *, name: str, authorization: str | None, result: dict[str, Any], oauth: Settings
+    *,
+    name: str,
+    authorization: str | None,
+    result: dict[str, Any],
+    oauth: Settings,
+    stage_name: str,
 ) -> None:
     content = result.get("result", {}).get("structuredContent", {})
     code = content.get("error")
     if code != "invalid_token":
-        logger.info("gate696_s1_command name=%s result=%s", name, code or "accepted")
+        logger.info("gate696_%s_command name=%s result=%s", stage_name, name, code or "accepted")
         return
     scheme, _, token = (authorization or "").partition(" ")
     if scheme.lower() != "bearer" or not token or len(token) > 24_000:
-        logger.info("gate696_s1_oauth name=%s reason=no_bearer", name)
+        logger.info("gate696_%s_oauth name=%s reason=no_bearer", stage_name, name)
         return
     try:
         claims = await asyncio.to_thread(_decode_access_token, token, oauth)
     except (InvalidTokenError, PyJWKClientError, OSError, ValueError) as error:
-        logger.info("gate696_s1_oauth name=%s reason=%s", name, type(error).__name__)
+        logger.info("gate696_%s_oauth name=%s reason=%s", stage_name, name, type(error).__name__)
         return
     logger.info(
-        "gate696_s1_oauth name=%s reason=invalid_claims workspace=%s accounts=%s client=%s",
+        "gate696_%s_oauth name=%s reason=invalid_claims workspace=%s accounts=%s client=%s",
+        stage_name,
         name,
         oauth.mcp_oauth_workspace_claim in claims,
         oauth.mcp_oauth_account_ids_claim in claims,
@@ -74,14 +120,22 @@ async def _record_command_result(
 
 def create_app(config: StageSettings | None = None) -> FastAPI:
     stage = config or StageSettings.from_environment()
+    s3 = isinstance(stage, S3StageSettings)
+    if isinstance(stage, S3StageSettings):
+        stage.require_enabled()
+    stage_name = "s3" if s3 else "s1"
     oauth = stage.oauth_settings()
 
     def configured_stage_claims(claims: dict[str, Any]) -> dict[str, Any]:
         # The token is signature/audience/issuer-verified before this function runs.
-        # This mapping is confined to the one configured synthetic binding.
+        # Claim defaults are confined to the S1 synthetic binding.
         client = claims.get("azp", claims.get("client_id"))
         if claims.get("sub") != stage.owner or client != stage.client_id:
-            raise McpOAuthError(error="invalid_token", description="The S1 identity is not bound")
+            raise McpOAuthError(
+                error="invalid_token", description="The stage identity is not bound"
+            )
+        if s3:
+            return claims
         scoped = dict(claims)
         scoped.setdefault(stage.workspace_claim, stage.workspace)
         scoped.setdefault(stage.account_ids_claim, [str(stage.scope().account_id)])
@@ -110,16 +164,29 @@ def create_app(config: StageSettings | None = None) -> FastAPI:
             },
         }
     )
-    ready["description"] = (
-        "Report journal readiness and issue a short-lived reference to the approved "
-        "synthetic target for this client."
-    )
-    catalog.append(file_descriptor())
+    if stage.s2_status_url:
+        ready_schema["required"].append("s2_status")
+        ready_schema["properties"]["s2_status"] = S2_STATUS_SCHEMA
+    if s3:
+        ready["description"] = (
+            "Report the S3 journal status and, with an active grant, "
+            "the short-lived reference to the owner's RU Saved Messages in staging."
+        )
+    else:
+        ready["description"] = (
+            "Report journal readiness, protected read-only S2 runtime status when configured, "
+            "and a short-lived reference to the approved synthetic target for this client."
+        )
+        catalog.append(file_descriptor())
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with database_runtime_lifespan(stage.database_url.get_secret_value()) as db:
-            journal = StageJournal(db.session_factory, stage)
+            journal = (
+                S3StageJournal(db.session_factory, stage)
+                if isinstance(stage, S3StageSettings)
+                else StageJournal(db.session_factory, stage)
+            )
             await journal.check_binding()
             app.state.journal = journal
             app.state.personal_command_service_factory = journal.for_client
@@ -148,13 +215,15 @@ def create_app(config: StageSettings | None = None) -> FastAPI:
             "bearer_methods_supported": ["header"],
         }
 
-    @app.get(FIXTURE_PATH)
     async def fixture() -> Response:
         return Response(
             FIXTURE,
             media_type="text/plain",
             headers={"Content-Disposition": 'attachment; filename="gate-s1.txt"'},
         )
+
+    if not s3:
+        app.get(FIXTURE_PATH)(fixture)
 
     @app.post("/mcp")
     async def mcp(request: Request) -> Response:
@@ -166,7 +235,7 @@ def create_app(config: StageSettings | None = None) -> FastAPI:
         if method == "initialize":
             result = {
                 "protocolVersion": MCP_PROTOCOL_VERSION,
-                "serverInfo": {"name": "gate-personal-s1", "version": "1.0"},
+                "serverInfo": {"name": f"gate-personal-{stage_name}", "version": "1.0"},
                 "capabilities": {"tools": {}},
             }
         elif method == "ping":
@@ -197,10 +266,14 @@ def create_app(config: StageSettings | None = None) -> FastAPI:
                     stage_auth=stage_auth,
                 )
                 await _record_command_result(
-                    name=name, authorization=auth, result=outcome, oauth=oauth
+                    name=name,
+                    authorization=auth,
+                    result=outcome,
+                    oauth=oauth,
+                    stage_name=stage_name,
                 )
                 return JSONResponse(outcome)
-            if name != FILE_TOOL:
+            if name != FILE_TOOL or s3:
                 return JSONResponse(
                     jsonrpc_error(request_id=request_id, code=-32602, message="Unknown tool")
                 )
@@ -235,3 +308,7 @@ def create_app(config: StageSettings | None = None) -> FastAPI:
         return JSONResponse(jsonrpc_result(request_id=request_id, result=result))
 
     return app
+
+
+def create_s3_app() -> FastAPI:
+    return create_app(load_s3_stage())

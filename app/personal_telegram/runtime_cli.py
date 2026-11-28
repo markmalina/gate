@@ -6,7 +6,9 @@ import argparse
 import asyncio
 import json
 import os
+import secrets
 import signal
+import sys
 from collections.abc import Mapping
 from contextlib import suppress
 from datetime import UTC, datetime
@@ -15,8 +17,9 @@ from uuid import UUID
 
 from pydantic import Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.application.personal_telegram_transport import PersonalTelegramTransportError
 from app.infrastructure.database import database_runtime_lifespan
@@ -24,11 +27,13 @@ from app.models.domain import TELEGRAM_MARK_RU_ACCOUNT_ID
 from app.personal_telegram.cloud_session import (
     CloudEncryptedSessionSource,
     CloudSessionBinding,
+    StoredCloudSession,
 )
 from app.personal_telegram.cloud_worker import (
     RuCloudWorker,
     TelegramApplication,
     TelethonRuntimeClient,
+    WorkerExit,
 )
 from app.personal_telegram.command_scope import CommandRuntimeError, RuCommandScope, utc_now
 from app.personal_telegram.command_store import (
@@ -36,7 +41,13 @@ from app.personal_telegram.command_store import (
     RuntimeBindingRow,
     SqlCommandStore,
 )
+from app.personal_telegram.s2_session_vault import SESSION_REF, open_runtime_s2_session
 from app.personal_telegram.session_persistence import SessionCipher
+
+S2_DB_HOST = "gate-ru-store.railway.internal"
+S2_DB_NAME = "gate_s2_ru"
+S2_MIGRATION = "0125_personal_runtime_check"
+S2_SCHEMA_LOCK = 6960125
 
 
 class RuntimeSettings(BaseSettings):
@@ -89,8 +100,33 @@ async def import_existing(
         or legacy.api_hash != config.api_hash.get_secret_value()
     ):
         raise CommandRuntimeError("ru_session_identity_mismatch")
-    scope, cipher = config.scope(), config.cipher()
     value = CloudEncryptedSessionSource(legacy).load(session_ref=legacy.session_ref)
+    return await _prepare_session(sessions, config, value, require_identical=False)
+
+
+async def import_s2_volume(
+    sessions: async_sessionmaker[AsyncSession],
+    config: RuntimeSettings,
+    snapshot: StoredCloudSession,
+) -> dict[str, object]:
+    if (
+        snapshot.api_id != config.api_id
+        or snapshot.owner_user_id != config.expected_provider_owner
+        or snapshot.session_ref != SESSION_REF
+    ):
+        raise CommandRuntimeError("ru_session_identity_mismatch")
+    return await _prepare_session(sessions, config, snapshot.session, require_identical=True)
+
+
+async def _prepare_session(
+    sessions: async_sessionmaker[AsyncSession],
+    config: RuntimeSettings,
+    value: str,
+    *,
+    require_identical: bool,
+) -> dict[str, object]:
+    scope, cipher = config.scope(), config.cipher()
+    scope.validate()
     try:
         async with sessions.begin() as session:
             session.add(
@@ -114,7 +150,13 @@ async def import_existing(
                 raise CommandRuntimeError("ru_binding_conflict") from None
             if row.key_version != cipher.key_version:
                 raise CommandRuntimeError("session_key_version_invalid") from None
-            cipher.unseal(scope, ciphertext=row.ciphertext, generation=row.session_generation)
+            existing = cipher.unseal(
+                scope,
+                ciphertext=row.ciphertext,
+                generation=row.session_generation,
+            )
+            if require_identical and not secrets.compare_digest(existing.encode(), value.encode()):
+                raise CommandRuntimeError("ru_binding_session_conflict") from None
         return {"account": "RU", "state": "already_prepared", "authenticated": None}
     return {"account": "RU", "state": "prepared", "authenticated": None}
 
@@ -184,17 +226,68 @@ async def inspect_runtime(
         }
 
 
+def require_s2_database(dsn: str) -> None:
+    url = make_url(dsn)
+    if (
+        url.drivername != "postgresql+asyncpg"
+        or url.host != S2_DB_HOST
+        or url.port not in (None, 5432)
+        or url.database != S2_DB_NAME
+        or url.username != "gate_s2"
+        or bool(url.query)
+    ):
+        raise CommandRuntimeError("s2_runtime_database_scope_mismatch")
+
+
+async def prepare_s2_schema(engine: AsyncEngine, dsn: str) -> None:
+    """Initialize only the private S2 database with the versioned Gate migrations."""
+    async with asyncio.timeout(95), engine.connect() as connection:
+        version = await connection.exec_driver_sql("SHOW server_version_num")
+        if int(version.scalar_one()) // 10000 != 17:
+            raise CommandRuntimeError("s2_runtime_postgres_version_mismatch")
+        await connection.exec_driver_sql(f"SELECT pg_advisory_lock({S2_SCHEMA_LOCK})")
+        try:
+            process = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-m",
+                "alembic",
+                "upgrade",
+                S2_MIGRATION,
+                env={"DATABASE_URL": dsn},
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            try:
+                if await process.wait() != 0:
+                    raise CommandRuntimeError("s2_runtime_schema_upgrade_failed")
+            finally:
+                if process.returncode is None:
+                    process.kill()
+                    await process.wait()
+        finally:
+            await connection.exec_driver_sql(f"SELECT pg_advisory_unlock({S2_SCHEMA_LOCK})")
+
+
 async def run(
-    action: Literal["inspect", "import-existing", "run"],
+    action: Literal["inspect", "import-existing", "import-volume", "bootstrap-volume", "run"],
     seconds: int,
     environment: Mapping[str, str],
+    *,
+    s2_owner: bool = False,
 ) -> dict[str, Any]:
     if action == "run" and environment.get("GATE_PERSONAL_RUNTIME_ENABLED", "").lower() != "true":
         return {"account": "RU", "state": "disabled"}
-    config = RuntimeSettings()  # type: ignore[call-arg]
+    from_volume = action in {"import-volume", "bootstrap-volume"} or s2_owner
+    source = open_runtime_s2_session(environment) if from_volume else None
+    if source is None:
+        config = RuntimeSettings()  # type: ignore[call-arg]
+    else:
+        config = RuntimeSettings(expected_provider_owner=source.owner_user_id)  # type: ignore[call-arg]
     dsn = config.database_url.get_secret_value()
     if not dsn.startswith("postgresql+asyncpg://"):
         raise CommandRuntimeError("personal_runtime_database_required")
+    if from_volume:
+        require_s2_database(dsn)
     if not 20 <= seconds <= 28_800:
         raise CommandRuntimeError("runtime_window_invalid")
     async with database_runtime_lifespan(dsn) as database:
@@ -203,6 +296,15 @@ async def run(
             return await inspect_runtime(sessions, config)
         if action == "import-existing":
             return await import_existing(sessions, config, environment)
+        if action in {"import-volume", "bootstrap-volume"}:
+            assert source is not None
+            if action == "bootstrap-volume":
+                await prepare_s2_schema(database.engine, dsn)
+            result = await import_s2_volume(sessions, config, source)
+            status = await inspect_runtime(sessions, config)
+            if status["configured"] is not True:
+                raise CommandRuntimeError("s2_runtime_binding_readback_failed")
+            return {**result, "configured": True, "runtime_connected": status["runtime_connected"]}
         app = TelegramApplication(config.api_id, config.api_hash.get_secret_value())
         app.validate()
         worker = RuCloudWorker(
@@ -219,33 +321,44 @@ async def run(
             client_factory=lambda session: TelethonRuntimeClient(session, app),
             enabled=config.enabled,
         )
-        stop = asyncio.Event()
-        loop = asyncio.get_running_loop()
-        timer = loop.call_later(seconds, stop.set)
-        installed = []
-        try:
-            for sig in (signal.SIGINT, signal.SIGTERM):
-                with suppress(NotImplementedError):
-                    loop.add_signal_handler(sig, stop.set)
-                    installed.append(sig)
-            outcome = await worker.run_until(stop)
-        finally:
-            timer.cancel()
-            for sig in installed:
-                loop.remove_signal_handler(sig)
+        outcome = await run_worker(worker, seconds)
         return {"account": "RU", "state": outcome.state, "error_code": outcome.code}
+
+
+async def run_worker(worker: RuCloudWorker, seconds: float) -> WorkerExit:
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    timer = loop.call_later(seconds, stop.set)
+    installed = []
+    try:
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            with suppress(NotImplementedError):
+                loop.add_signal_handler(sig, stop.set)
+                installed.append(sig)
+        return await worker.run_until(stop)
+    finally:
+        timer.cancel()
+        for sig in installed:
+            loop.remove_signal_handler(sig)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("inspect", "import-existing", "run"))
+    parser.add_argument(
+        "action", choices=("inspect", "import-existing", "import-volume", "bootstrap-volume", "run")
+    )
     parser.add_argument("--seconds", type=int, default=300)
+    parser.add_argument(
+        "--s2-owner", action="store_true", help="read the owner pin on the S2 volume"
+    )
     args = parser.parse_args()
+    if args.s2_owner and args.action not in {"run", "inspect"}:
+        parser.error("--s2-owner requires run or inspect")
     try:
-        outcome = asyncio.run(run(args.action, args.seconds, os.environ))
+        outcome = asyncio.run(run(args.action, args.seconds, os.environ, s2_owner=args.s2_owner))
     except (CommandRuntimeError, PersonalTelegramTransportError) as exc:
         outcome = {"account": "RU", "state": "failed", "error_code": str(exc)}
-    except (SQLAlchemyError, ValidationError, OSError, ValueError):
+    except (SQLAlchemyError, ValidationError, OSError, ValueError, TimeoutError):
         outcome = {"account": "RU", "state": "failed", "error_code": "runtime_configuration_failed"}
     print(json.dumps(outcome, sort_keys=True))
     if outcome.get("state") in {"failed", "blocked"}:

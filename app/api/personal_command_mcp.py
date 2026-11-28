@@ -64,7 +64,12 @@ OPERATION_SCHEMA: JsonObject = {
         "receipt_ref": {"type": ["string", "null"]},
         "error_code": {"type": ["string", "null"]},
         "replay": {"type": "boolean"},
-        "sent": {"const": False},
+        "sent": {
+            "type": "boolean",
+            "description": (
+                "True only for a durable succeeded operation with a verified Telegram message ID."
+            ),
+        },
         "runtime_connected": {"const": False},
     },
 }
@@ -108,9 +113,11 @@ def personal_command_tools(settings: Settings) -> list[JsonObject]:
             {
                 "name": name,
                 "description": (
-                    f"Personal RU command {action}. Execute only queues a durable operation; "
-                    "this staged contract has no Telegram dispatcher and sends no message. "
-                    "Reuse the same request_key for retries of the same intent."
+                    f"Personal RU command {action}. Execute only queues a durable operation. "
+                    "Status and result report sent=true only after the dispatcher records a "
+                    "verified Telegram message ID; queued, rejected and UNKNOWN outcomes are "
+                    "never delivery proof. Reuse the same request_key for retries of the same "
+                    "intent."
                 ),
                 "inputSchema": {
                     "type": "object",

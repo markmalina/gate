@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import jwt
@@ -14,6 +16,8 @@ from app.api import mcp_metadata_routes, mcp_routes
 from app.api.deps import get_db_session
 from app.api.personal_command_mcp import PERSONAL_COMMAND_SCOPES, personal_command_tools
 from app.api.routes import get_telegram_client
+from app.application.personal_telegram_fence import PersonalSendFenceResult
+from app.application.personal_telegram_transport import ProviderOutcome, ProviderSendReceipt
 from app.core import mcp_oauth
 from app.core.config import Settings, get_settings
 from app.core.mcp_security import AccessScope, Principal
@@ -33,6 +37,10 @@ from app.personal_telegram.command_store import (
     SqlCommandStore,
 )
 from app.personal_telegram.grant_registry import SqlGrantRegistry
+from app.personal_telegram.saved_messages_dispatch import (
+    SavedMessagesApproval,
+    SavedMessagesDispatcher,
+)
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import FastAPI
@@ -397,5 +405,181 @@ async def test_signed_asgi_sql_replay_revocation_and_ru_isolation(
             app, token, "execute", {"operation_ref": second["operation_ref"]}
         )
         assert revoked_execute["isError"] is True
+    finally:
+        await engine.dispose()
+
+
+class ReceiptFence:
+    def __init__(self) -> None:
+        self.fence_id = uuid4()
+
+    async def reserve(self, _command: Any) -> PersonalSendFenceResult:
+        return PersonalSendFenceResult(self.fence_id, "unknown", None, False)
+
+    async def finalize(
+        self,
+        _command: Any,
+        *,
+        outcome: str,
+        receipt_ref: str | None,
+        external_effect_performed: bool | None,
+    ) -> PersonalSendFenceResult:
+        if outcome == "sent":
+            assert external_effect_performed is True
+        else:
+            assert external_effect_performed is None
+        return PersonalSendFenceResult(self.fence_id, outcome, receipt_ref, False)
+
+
+@pytest.mark.anyio
+async def test_work_queue_dispatch_receipt_is_end_to_end_and_unknown_is_not_sent(
+    harness: Any, tmp_path: Any
+) -> None:
+    app, key, _double, settings = harness
+    now = datetime.now(UTC)
+    scope = RuCommandScope("mark-personal", TELEGRAM_MARK_RU_ACCOUNT_ID, uuid4(), "mark")
+    principal = Principal(
+        "mark",
+        "oauth2",
+        frozenset(PERSONAL_COMMAND_SCOPES.values()),
+        AccessScope(scope.workspace, frozenset({scope.account_id}), frozenset()),
+        ISSUER,
+        "work-client",
+    )
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'mcp-dispatch.db'}")
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(PersonalRuntimeBase.metadata.create_all)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        async with sessions.begin() as session:
+            session.add(
+                RuntimeBindingRow(
+                    id=scope.binding_id,
+                    workspace=scope.workspace,
+                    account_id=str(scope.account_id),
+                    owner_subject=scope.owner_subject,
+                    session_generation=1,
+                    ciphertext=b"synthetic-not-a-session",
+                    revision=0,
+                    key_version="synthetic-v1",
+                    custody_state="prepared",
+                )
+            )
+        grants = SqlGrantRegistry(
+            sessions, scope=scope, policy_key=Fernet.generate_key(), key_version="synthetic-v1"
+        )
+        store = SqlCommandStore(
+            sessions,
+            scope=scope,
+            payload_cipher=CommandPayloadCipher(Fernet.generate_key()),
+            grants=grants,
+        )
+        service = PersonalCommandService(
+            store, grants, peer_reference_key=Fernet.generate_key(), clock=lambda: now
+        )
+        app.state.personal_command_service_factory = lambda _principal: service
+        token = _token(key)
+        lease = await store.acquire_owner(now=now, ttl=timedelta(seconds=30))
+        await store.renew_owner(
+            lease,
+            now=now,
+            ttl=timedelta(seconds=30),
+            health="ready",
+            verified=True,
+        )
+        calls: list[tuple[str, int]] = []
+
+        async def run_case(request_key: str, outcome: ProviderOutcome) -> dict[str, Any]:
+            approval_ref = "synthetic-approval-" + request_key
+            delegation = CommandDelegation(
+                uuid4(),
+                scope,
+                personal_client_namespace(principal),
+                frozenset({"send_text"}),
+                frozenset({"user:42"}),
+                now + timedelta(hours=1),
+            )
+            await grants.install_approved_grant(delegation, approval_ref=approval_ref, now=now)
+            peer_ref = await service.issue_peer_reference(
+                principal=principal,
+                delegation=delegation,
+                peer=PeerIdentity("self", 42),
+                now=now,
+            )
+            text = "synthetic receipt " + request_key
+            prepared = (
+                await _call(
+                    app,
+                    token,
+                    "prepare",
+                    {
+                        "grant_ref": "grant_" + delegation.delegation_id.hex,
+                        "peer_ref": peer_ref,
+                        "request_key": request_key,
+                        "text": text,
+                    },
+                )
+            )["structuredContent"]
+            operation = {"operation_ref": prepared["operation_ref"]}
+            queued = await _call(app, token, "execute", operation)
+            assert queued["structuredContent"]["state"] == "queued"
+            assert queued["structuredContent"]["sent"] is False
+
+            async def send(value: str, random_id: int) -> ProviderSendReceipt:
+                calls.append((value, random_id))
+                if outcome == ProviderOutcome.SENT:
+                    return ProviderSendReceipt(outcome, "telegram_321", True)
+                return ProviderSendReceipt(outcome, None, None)
+
+            dispatcher = SavedMessagesDispatcher(
+                SavedMessagesApproval(
+                    UUID(hex=prepared["operation_ref"].removeprefix("operation_")),
+                    delegation.delegation_id,
+                    hashlib.sha256(text.encode()).hexdigest(),
+                    now + timedelta(minutes=1),
+                    approval_ref,
+                    "a" * 40,
+                ),
+                ReceiptFence(),
+            )
+            status = await dispatcher.dispatch_once(
+                store,
+                lease,
+                verified_owner_id=42,
+                send=send,
+                clock=lambda: now,
+                stop=asyncio.Event(),
+            )
+            assert status is not None
+            call_count = len(calls)
+            assert (
+                await dispatcher.dispatch_once(
+                    store,
+                    lease,
+                    verified_owner_id=42,
+                    send=send,
+                    clock=lambda: now,
+                    stop=asyncio.Event(),
+                )
+                is None
+            )
+            assert len(calls) == call_count
+            result = await _call(app, token, "result", operation)
+            descriptor = next(
+                item
+                for item in personal_command_tools(settings)
+                if item["name"] == "gate_personal_command_result"
+            )
+            Draft202012Validator(descriptor["outputSchema"]).validate(result["structuredContent"])
+            return result["structuredContent"]
+
+        delivered = await run_case("work-dispatch-sent", ProviderOutcome.SENT)
+        assert delivered["state"] == "succeeded"
+        assert delivered["receipt_ref"] == "telegram_321" and delivered["sent"] is True
+        uncertain = await run_case("work-dispatch-unknown", ProviderOutcome.UNKNOWN)
+        assert uncertain["state"] == "unknown"
+        assert uncertain["receipt_ref"] is None and uncertain["sent"] is False
+        assert len(calls) == 2 and calls[0][1] != calls[1][1]
+        await store.release_disconnected_owner(lease)
     finally:
         await engine.dispose()

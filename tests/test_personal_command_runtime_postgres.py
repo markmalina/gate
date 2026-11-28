@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from app.application.personal_telegram_transport import ProviderOutcome, ProviderSendReceipt
 from app.core.mcp_security import AccessScope, Principal
-from app.models.domain import TELEGRAM_MARK_RU_ACCOUNT_ID
+from app.infrastructure.personal_telegram_fence import SqlPersonalTelegramSendFence
+from app.models.domain import TELEGRAM_MARK_RU_ACCOUNT_ID, Account, Base, PersonalTelegramSendFence
 from app.personal_telegram.command_scope import (
     CommandDelegation,
     CommandRuntimeError,
@@ -27,6 +30,10 @@ from app.personal_telegram.command_store import (
     SqlCommandStore,
 )
 from app.personal_telegram.grant_registry import SqlGrantRegistry
+from app.personal_telegram.saved_messages_dispatch import (
+    SavedMessagesApproval,
+    SavedMessagesDispatcher,
+)
 from app.personal_telegram.session_persistence import SessionCipher
 from cryptography.fernet import Fernet
 from sqlalchemy import func, select, text
@@ -125,6 +132,71 @@ async def prepare(runtime, key):
         payload={"text": "synthetic"},
         now=NOW,
     )
+
+
+@pytest.mark.anyio
+async def test_postgres_saved_messages_commits_both_reservations_before_single_send(pg_runtime):
+    async with pg_runtime.sessions.begin() as session:
+        connection = await session.connection()
+        await connection.run_sync(Base.metadata.create_all)
+        session.add(
+            Account(
+                id=pg_runtime.scope.account_id,
+                alias="synthetic-ru",
+                owner="mark",
+                account_type="personal",
+                telegram_user_id=42,
+            )
+        )
+    operation = await prepare(pg_runtime, "saved-messages-concurrent")
+    await pg_runtime.store.execute(operation.operation_id, principal=pg_runtime.principal, now=NOW)
+    token = await pg_runtime.store.acquire_owner(now=NOW, ttl=TTL)
+    await pg_runtime.store.renew_owner(token, now=NOW, ttl=TTL, health="ready", verified=True)
+    dispatcher = SavedMessagesDispatcher(
+        SavedMessagesApproval(
+            operation.operation_id,
+            pg_runtime.delegation.delegation_id,
+            hashlib.sha256(b"synthetic").hexdigest(),
+            NOW + timedelta(minutes=2),
+            "synthetic-approval",
+            "a" * 40,
+        ),
+        SqlPersonalTelegramSendFence(pg_runtime.sessions, enabled=True),
+    )
+    sent = []
+
+    async def send(message, random_id):
+        async with pg_runtime.sessions() as session:
+            fence = (await session.scalars(select(PersonalTelegramSendFence))).one()
+            attempt = (await session.scalars(select(RuntimeAttemptRow))).one()
+            assert fence.status == attempt.state == "unknown"
+            assert fence.reply_draft_id is None and fence.physical_peer_key == "user:42"
+            assert int(attempt.random_id) == random_id
+        sent.append((message, random_id))
+        return ProviderSendReceipt(ProviderOutcome.SENT, "telegram_123", True)
+
+    stop = asyncio.Event()
+    results = await asyncio.gather(
+        *(
+            dispatcher.dispatch_once(
+                pg_runtime.store,
+                token,
+                verified_owner_id=42,
+                send=send,
+                stop=stop,
+                clock=lambda: NOW,
+            )
+            for _ in range(2)
+        )
+    )
+    assert len(sent) == 1 and sent[0][0] == "synthetic"
+    assert sum(item is None for item in results) == 1
+    accepted = next(item for item in results if item is not None)
+    assert accepted.state == "succeeded" and accepted.receipt_ref == "telegram_123"
+    async with pg_runtime.sessions() as session:
+        fence = (await session.scalars(select(PersonalTelegramSendFence))).one()
+        assert fence.status == "sent" and fence.provider_receipt_ref == accepted.receipt_ref
+    await pg_runtime.store.release_disconnected_owner(token)
 
 
 @pytest.mark.anyio
