@@ -240,12 +240,18 @@ def _reference_id(value: str, kind: str) -> UUID:
 
 
 def _result(status: OperationStatus) -> dict[str, Any]:
+    sent = (
+        status.state == "succeeded"
+        and status.error_code is None
+        and isinstance(status.receipt_ref, str)
+        and re.fullmatch(r"telegram_[1-9][0-9]{0,18}", status.receipt_ref) is not None
+    )
     return {
         "operation_ref": "operation_" + status.operation_id.hex,
         "state": status.state,
         "receipt_ref": status.receipt_ref,
         "error_code": status.error_code,
         "replay": status.replay,
-        "sent": False,
+        "sent": sent,
         "runtime_connected": False,
     }
