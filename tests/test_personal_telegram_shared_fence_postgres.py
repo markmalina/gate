@@ -156,8 +156,9 @@ async def test_standalone_reservation_needs_no_draft_and_blocks_business_peer() 
         assert first.fence_id == replay.fence_id
 
         telegram = _LiteralRecordingTelegram()
-        with pytest.raises(ReplySendError, match="task_send_blocked"):
+        with pytest.raises(ReplySendError) as blocked:
             await _send_once(sessions, seed=seed, draft_id=seed.draft_ids[0], telegram=telegram)
+        assert blocked.value.code == "task_send_blocked"
         assert telegram.plain_calls == []
 
 
