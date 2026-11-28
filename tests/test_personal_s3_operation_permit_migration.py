@@ -5,6 +5,9 @@ def test_personal_s3_operation_permit_migration_is_one_shot_and_reversible() -> 
     migration = Path("alembic/versions/0127_personal_s3_operation_permit.py").read_text(
         encoding="utf-8"
     )
+    revision = "0127_s3_operation_permit"
+    assert f'revision: str = "{revision}"' in migration
+    assert len(revision) <= 32
     assert 'down_revision: str | None = "0126_personal_standalone_fence"' in migration
     for column in (
         "permit_approval_ref",

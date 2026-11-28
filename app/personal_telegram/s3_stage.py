@@ -44,7 +44,7 @@ from app.personal_telegram.saved_messages_dispatch import (
 )
 from app.personal_telegram.work_stage import StageJournal, StageSettings
 
-S3_MIGRATION = "0127_personal_s3_operation_permit"
+S3_MIGRATION = "0127_s3_operation_permit"
 
 
 class S3StageSettings(StageSettings):

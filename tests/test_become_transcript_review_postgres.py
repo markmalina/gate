@@ -3201,7 +3201,7 @@ async def test_active_grant_guard_and_clean_migration_round_trip_are_repeatable(
         env=migration_env,
     ).stdout.strip().splitlines()
     assert len(heads) == 1
-    assert heads[0].startswith("0127_personal_s3_operation_permit ")
+    assert heads[0].startswith("0127_s3_operation_permit ")
 
 
 
