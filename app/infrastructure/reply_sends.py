@@ -678,6 +678,10 @@ class SqlTelegramReplySender:
                         command,
                         for_update=True,
                     )
+                    await self._raise_if_personal_peer_blocked(
+                        account_id=current.account_id,
+                        target_chat_id=current.target_chat_id,
+                    )
                     self._validate_confirmation(
                         command=command,
                         account_label_value=current.account_label,
@@ -1873,6 +1877,28 @@ class SqlTelegramReplySender:
             raise ReplySendError(
                 code="task_send_blocked",
                 message="A personal Telegram reservation blocks this Business draft",
+            )
+
+    async def _raise_if_personal_peer_blocked(
+        self, *, account_id: UUID, target_chat_id: str
+    ) -> None:
+        """Recheck the shared physical peer after Business holds the account lock."""
+
+        if not target_chat_id.isdigit() or int(target_chat_id) <= 0:
+            return
+        personal = await self._session.scalar(
+            select(PersonalTelegramSendFence.id)
+            .where(
+                PersonalTelegramSendFence.account_id == account_id,
+                PersonalTelegramSendFence.physical_peer_key == f"user:{int(target_chat_id)}",
+                PersonalTelegramSendFence.status == "unknown",
+            )
+            .limit(1)
+        )
+        if personal is not None:
+            raise ReplySendError(
+                code="task_send_blocked",
+                message="A personal Telegram reservation blocks this physical peer",
             )
 
     async def _load_covered_task_ids(

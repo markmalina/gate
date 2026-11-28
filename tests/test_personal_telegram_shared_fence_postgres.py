@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -34,6 +35,7 @@ def _command(seed: _SeededReply, *, draft_id: UUID, exact_text: str) -> Personal
     return PersonalSendFenceCommand(
         draft_id=draft_id,
         account_id=seed.account_id,
+        physical_peer_key=f"user:{seed.recipient_chat_id}",
         actor_ref="actor_mark",
         session_ref="session_synthetic_shared",
         peer_ref="peer_synthetic_shared",
@@ -41,6 +43,15 @@ def _command(seed: _SeededReply, *, draft_id: UUID, exact_text: str) -> Personal
         approval_digest=hashlib.sha256(b"synthetic-approval").hexdigest(),
         idempotency_key=f"send_{uuid4().hex}",
         now=datetime.now(UTC),
+    )
+
+
+def _standalone(seed: _SeededReply, *, request_key: str | None = None) -> PersonalSendFenceCommand:
+    command = _command(seed, draft_id=seed.draft_ids[0], exact_text="Exact shared test")
+    return replace(
+        command,
+        draft_id=None,
+        idempotency_key=request_key or f"send_{uuid4().hex}",
     )
 
 
@@ -131,3 +142,62 @@ async def test_personal_fence_is_default_off_and_serializes_concurrent_reservati
         results = await asyncio.gather(fence.reserve(command), fence.reserve(command))
         assert {result.replay for result in results} == {True, False}
         assert results[0].fence_id == results[1].fence_id
+
+
+@pytest.mark.anyio
+async def test_standalone_reservation_needs_no_draft_and_blocks_business_peer() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions, draft_text="Exact shared test")
+        fence = SqlPersonalTelegramSendFence(sessions, enabled=True)
+        command = _standalone(seed, request_key="send_standalone_concurrent")
+
+        first, replay = await asyncio.gather(fence.reserve(command), fence.reserve(command))
+        assert {first.replay, replay.replay} == {False, True}
+        assert first.fence_id == replay.fence_id
+
+        telegram = _LiteralRecordingTelegram()
+        with pytest.raises(ReplySendError, match="task_send_blocked"):
+            await _send_once(sessions, seed=seed, draft_id=seed.draft_ids[0], telegram=telegram)
+        assert telegram.plain_calls == []
+
+
+@pytest.mark.anyio
+async def test_standalone_request_key_conflict_and_unknown_peer_quarantine() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions, draft_text="Exact shared test")
+        fence = SqlPersonalTelegramSendFence(sessions, enabled=True)
+        command = _standalone(seed, request_key="send_standalone_conflict")
+        await fence.reserve(command)
+
+        with pytest.raises(PersonalSendFenceError, match="fence_conflict"):
+            await fence.reserve(
+                replace(
+                    command,
+                    exact_text_digest=hashlib.sha256(b"changed text").hexdigest(),
+                )
+            )
+        with pytest.raises(PersonalSendFenceError, match="personal_attempt_exists"):
+            await fence.reserve(_standalone(seed, request_key="send_distinct_command"))
+
+
+@pytest.mark.anyio
+async def test_business_unknown_blocks_standalone_same_physical_peer() -> None:
+    async with _postgres_sessions() as sessions:
+        seed = await _seed_reply(sessions, draft_text="Exact shared test")
+        async with sessions.begin() as session:
+            session.add(
+                SendAttempt(
+                    reply_draft_id=seed.draft_ids[0],
+                    reply_task_id=seed.task_id,
+                    conversation_id=seed.conversation_id,
+                    account_id=seed.account_id,
+                    project_id=seed.project_id,
+                    principal_subject="synthetic-business",
+                    status=SendAttemptStatus.UNKNOWN.value,
+                    account_label="RU",
+                    target_chat_id=seed.recipient_chat_id,
+                    business_connection_id=seed.business_connection_id,
+                )
+            )
+        with pytest.raises(PersonalSendFenceError, match="business_attempt_exists"):
+            await SqlPersonalTelegramSendFence(sessions, enabled=True).reserve(_standalone(seed))

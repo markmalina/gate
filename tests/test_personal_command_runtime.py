@@ -45,6 +45,12 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
+def test_self_alias_uses_user_physical_key_without_merging_other_peer_kinds() -> None:
+    assert PeerIdentity("self", 42).key == PeerIdentity("user", 42).key == "user:42"
+    assert PeerIdentity("chat", 42).key == "chat:42"
+    assert PeerIdentity("channel", 42).key == "channel:42"
+
+
 @pytest.fixture
 async def runtime(tmp_path):
     scope = RuCommandScope("synthetic-workspace", TELEGRAM_MARK_RU_ACCOUNT_ID, uuid4(), "owner")

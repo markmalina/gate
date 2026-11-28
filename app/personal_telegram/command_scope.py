@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from app.application.personal_telegram_fence import PhysicalTelegramPeer
 from app.core.mcp_security import Principal
 from app.models.domain import TELEGRAM_MARK_RU_ACCOUNT_ID
 
@@ -51,7 +52,7 @@ class PeerIdentity:
     @property
     def key(self) -> str:
         self.validate()
-        return f"{self.peer_type}:{self.provider_id}"
+        return PhysicalTelegramPeer.from_identity(self.peer_type, self.provider_id).key
 
 
 @dataclass(frozen=True, slots=True)

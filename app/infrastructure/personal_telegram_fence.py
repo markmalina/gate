@@ -1,6 +1,6 @@
 """Default-off PostgreSQL fence shared by Business and personal sends.
 
-This reserves one existing Gate draft before an owner-local MTProto attempt.
+It can reserve an existing Gate draft or one standalone private-user command.
 It never loads a Telegram session or calls the provider.
 """
 
@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.application.personal_telegram_fence import (
     PersonalSendFenceCommand,
     PersonalSendFenceResult,
+    PhysicalTelegramPeer,
 )
 from app.application.personal_telegram_transport import (
     _digest,
@@ -44,7 +45,7 @@ class PersonalSendFenceError(RuntimeError):
 
 
 class SqlPersonalTelegramSendFence:
-    """Commit an ambiguous reservation under the Business conversation lock."""
+    """Commit an ambiguous reservation under a shared Business lock."""
 
     def __init__(
         self, sessions: async_sessionmaker[AsyncSession], *, enabled: bool = False
@@ -55,58 +56,58 @@ class SqlPersonalTelegramSendFence:
     async def reserve(self, command: PersonalSendFenceCommand) -> PersonalSendFenceResult:
         if not self._enabled:
             raise PersonalSendFenceError("personal_telegram_shared_fence_disabled")
+        try:
+            physical_peer = PhysicalTelegramPeer.from_key(command.physical_peer_key)
+        except ValueError as exc:
+            raise PersonalSendFenceError(str(exc)) from None
+        if command.draft_id is None and physical_peer.kind != "user":
+            # Business currently exposes a typed physical identity only for its
+            # private user dialogs.  Do not pretend group/channel admission is
+            # cross-transport until that metadata is available.
+            raise PersonalSendFenceError("personal_telegram_physical_peer_unsupported")
         fingerprint = _fingerprint(command)
         async with self._sessions.begin() as session:
-            # Advisory read only: the authoritative draft is rechecked after
-            # taking the same conversation lock used by Business reservation.
-            conversation_id = await session.scalar(
-                select(ReplyDraft.conversation_id).where(ReplyDraft.id == command.draft_id)
-            )
-            if conversation_id is None:
-                raise PersonalSendFenceError("personal_telegram_draft_not_found")
-            conversation = await session.scalar(
-                select(Conversation)
-                .where(
-                    Conversation.id == conversation_id,
-                    Conversation.account_id == command.account_id,
+            conversation_id = None
+            conversation = None
+            if command.draft_id is not None:
+                # Use the same conversation-first lock order as Business.
+                conversation_id = await session.scalar(
+                    select(ReplyDraft.conversation_id).where(ReplyDraft.id == command.draft_id)
                 )
-                .with_for_update()
-            )
-            if conversation is None:
-                raise PersonalSendFenceError("personal_telegram_account_mismatch")
-
-            existing = await session.scalar(
-                select(PersonalTelegramSendFence)
-                .where(
-                    or_(
-                        PersonalTelegramSendFence.reply_draft_id == command.draft_id,
-                        PersonalTelegramSendFence.idempotency_key == command.idempotency_key,
+                if conversation_id is None:
+                    raise PersonalSendFenceError("personal_telegram_draft_not_found")
+                conversation = await session.scalar(
+                    select(Conversation)
+                    .where(
+                        Conversation.id == conversation_id,
+                        Conversation.account_id == command.account_id,
                     )
+                    .with_for_update()
                 )
-                .limit(1)
-            )
-            if existing is not None:
-                if existing.fingerprint != fingerprint:
-                    raise PersonalSendFenceError("personal_telegram_fence_conflict")
-                return _result(existing, replay=True)
+                if conversation is None:
+                    raise PersonalSendFenceError("personal_telegram_account_mismatch")
 
-            draft = await session.scalar(
-                select(ReplyDraft)
-                .where(
-                    ReplyDraft.id == command.draft_id,
-                    ReplyDraft.conversation_id == conversation_id,
-                    ReplyDraft.account_id == command.account_id,
-                )
-                .with_for_update()
-            )
+            # Standalone reservations serialize on the account row. Business
+            # locks the same row before its final physical-peer recheck.
             account = await session.scalar(
                 select(Account).where(Account.id == command.account_id).with_for_update()
             )
-            if draft is None or draft.status not in (
-                ReplyDraftStatus.GENERATED.value,
-                ReplyDraftStatus.EDITED.value,
-            ):
-                raise PersonalSendFenceError("personal_telegram_draft_unavailable")
+
+            existing_filter = [PersonalTelegramSendFence.idempotency_key == command.idempotency_key]
+            if command.draft_id is not None:
+                existing_filter.append(PersonalTelegramSendFence.reply_draft_id == command.draft_id)
+            existing = await session.scalar(
+                select(PersonalTelegramSendFence).where(or_(*existing_filter)).limit(1)
+            )
+            if existing is not None:
+                legacy = (
+                    existing.physical_peer_key == physical_peer.key
+                    and existing.fingerprint == _legacy_draft_fingerprint(command)
+                )
+                if existing.fingerprint != fingerprint and not legacy:
+                    raise PersonalSendFenceError("personal_telegram_fence_conflict")
+                return _result(existing, replay=True)
+
             if (
                 account is None
                 or account.owner.casefold() not in ("mark", "mark-personal")
@@ -114,33 +115,53 @@ class SqlPersonalTelegramSendFence:
                 or not account.send_enabled
             ):
                 raise PersonalSendFenceError("personal_telegram_account_unavailable")
-            if (
-                hashlib.sha256(draft.draft_text.encode("utf-8")).hexdigest()
-                != command.exact_text_digest
-            ):
-                raise PersonalSendFenceError("personal_telegram_exact_text_mismatch")
 
-            # Same draft is fenced permanently across transports; ambiguous
-            # attempts also fence newer drafts in the same conversation.
-            blocked = await session.scalar(
-                select(SendAttempt.id)
-                .where(
-                    or_(
-                        SendAttempt.reply_draft_id == command.draft_id,
-                        and_(
-                            SendAttempt.conversation_id == conversation_id,
-                            SendAttempt.status.in_(_ACTIVE_BUSINESS),
-                        ),
+            if command.draft_id is not None:
+                draft = await session.scalar(
+                    select(ReplyDraft)
+                    .where(
+                        ReplyDraft.id == command.draft_id,
+                        ReplyDraft.conversation_id == conversation_id,
+                        ReplyDraft.account_id == command.account_id,
                     )
+                    .with_for_update()
                 )
-                .limit(1)
+                if draft is None or draft.status not in (
+                    ReplyDraftStatus.GENERATED.value,
+                    ReplyDraftStatus.EDITED.value,
+                ):
+                    raise PersonalSendFenceError("personal_telegram_draft_unavailable")
+                if (
+                    hashlib.sha256(draft.draft_text.encode("utf-8")).hexdigest()
+                    != command.exact_text_digest
+                ):
+                    raise PersonalSendFenceError("personal_telegram_exact_text_mismatch")
+                if (
+                    conversation is None
+                    or physical_peer.kind != "user"
+                    or str(physical_peer.provider_id) != conversation.chat_id
+                ):
+                    raise PersonalSendFenceError("personal_telegram_physical_peer_mismatch")
+
+            business_filter = [
+                and_(
+                    SendAttempt.account_id == command.account_id,
+                    SendAttempt.target_chat_id == str(physical_peer.provider_id),
+                    SendAttempt.status.in_(_ACTIVE_BUSINESS),
+                )
+            ]
+            if command.draft_id is not None:
+                business_filter.append(SendAttempt.reply_draft_id == command.draft_id)
+            blocked = await session.scalar(
+                select(SendAttempt.id).where(or_(*business_filter)).limit(1)
             )
             if blocked is not None:
                 raise PersonalSendFenceError("personal_telegram_business_attempt_exists")
             other_personal = await session.scalar(
                 select(PersonalTelegramSendFence.id)
                 .where(
-                    PersonalTelegramSendFence.conversation_id == conversation_id,
+                    PersonalTelegramSendFence.account_id == command.account_id,
+                    PersonalTelegramSendFence.physical_peer_key == physical_peer.key,
                     PersonalTelegramSendFence.status == "unknown",
                 )
                 .limit(1)
@@ -153,6 +174,7 @@ class SqlPersonalTelegramSendFence:
                 reply_draft_id=command.draft_id,
                 conversation_id=conversation_id,
                 account_id=command.account_id,
+                physical_peer_key=physical_peer.key,
                 idempotency_key=command.idempotency_key,
                 actor_ref=command.actor_ref,
                 session_ref=command.session_ref,
@@ -192,7 +214,12 @@ class SqlPersonalTelegramSendFence:
                 .where(PersonalTelegramSendFence.idempotency_key == command.idempotency_key)
                 .with_for_update()
             )
-            if fence is None or fence.fingerprint != fingerprint:
+            legacy = (
+                fence is not None
+                and fence.physical_peer_key == command.physical_peer_key
+                and fence.fingerprint == _legacy_draft_fingerprint(command)
+            )
+            if fence is None or (fence.fingerprint != fingerprint and not legacy):
                 raise PersonalSendFenceError("personal_telegram_fence_conflict")
             if fence.status != "unknown" or fence.finished_at is not None:
                 return _result(fence, replay=True)
@@ -214,6 +241,30 @@ def _fingerprint(command: PersonalSendFenceCommand) -> str:
         raise PersonalSendFenceError("personal_telegram_time_invalid")
     if not _valid_digest(command.exact_text_digest) or not _valid_digest(command.approval_digest):
         raise PersonalSendFenceError("personal_telegram_digest_invalid")
+    try:
+        physical_peer_key = PhysicalTelegramPeer.from_key(command.physical_peer_key).key
+    except ValueError as exc:
+        raise PersonalSendFenceError(str(exc)) from None
+    return _digest(
+        {
+            "draft_id": str(command.draft_id),
+            "account_id": str(command.account_id),
+            "physical_peer_key": physical_peer_key,
+            "actor_ref": command.actor_ref,
+            "session_ref": command.session_ref,
+            "peer_ref": command.peer_ref,
+            "exact_text_digest": command.exact_text_digest,
+            "approval_digest": command.approval_digest,
+            "idempotency_key": command.idempotency_key,
+        }
+    )
+
+
+def _legacy_draft_fingerprint(command: PersonalSendFenceCommand) -> str:
+    """Accept replay/finalization of a pre-0126 draft reservation."""
+
+    if command.draft_id is None:
+        return ""
     return _digest(
         {
             "draft_id": str(command.draft_id),

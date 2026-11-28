@@ -59,6 +59,7 @@ def fence_command() -> PersonalSendFenceCommand:
     return PersonalSendFenceCommand(
         draft_id=UUID("00000000-0000-0000-0000-000000000001"),
         account_id=UUID("00000000-0000-0000-0000-000000000002"),
+        physical_peer_key="user:1",
         actor_ref="actor_owner",
         session_ref="session_synthetic001",
         peer_ref="peer_synthetic001",
