@@ -61,7 +61,12 @@ def config():
         grant_expires_at=datetime.now(UTC) + timedelta(minutes=10),
         approval_ref="s3-synthetic-approval",
         expected_provider_owner=42,
+        source_revision="a" * 40,
     )
+
+
+def stage_env(config, **values):
+    return {"RAILWAY_GIT_COMMIT_SHA": config.source_revision, **values}
 
 
 @pytest.fixture
@@ -146,6 +151,7 @@ def test_default_off_and_explicit_stage_manifest(monkeypatch):
         {"database_url": "postgresql+asyncpg://gate_s2@localhost/gate_s2_ru"},
         {"resource": "https://gate-mtproto-s1-staging.up.railway.app/mcp"},
         {"file_host": "fixture.oaiusercontent.com"},
+        {"source_revision": "not-a-sha"},
     ],
 )
 def test_wrong_environment_database_or_existing_route_is_rejected(config, override):
@@ -161,25 +167,58 @@ async def test_validation_and_missing_worker_approval_do_not_open_database(confi
         pytest.fail("Database was opened")
 
     monkeypatch.setattr(s3_stage, "database_runtime_lifespan", forbidden)
-    assert await s3_stage.run_stage("validate", config, {}) == {
+    environment = stage_env(config)
+    assert await s3_stage.run_stage("validate", config, environment) == {
         "account": "RU",
         "state": "configuration_valid",
+        "source_revision": config.source_revision,
         "provider_calls": 0,
     }
     with pytest.raises(CommandRuntimeError, match="s3_exact_operation_required"):
-        await s3_stage.run_stage("run-one", config, {})
-    approval = SavedMessagesApproval(uuid4(), config.grant_id, "b" * 64, config.grant_expires_at)
+        await s3_stage.run_stage("run-one", config, environment)
+    approval = SavedMessagesApproval(
+        uuid4(),
+        config.grant_id,
+        "b" * 64,
+        config.grant_expires_at,
+        config.approval_ref,
+        config.source_revision,
+    )
     with pytest.raises(CommandRuntimeError, match="s3_worker_disabled"):
-        await s3_stage.run_stage("run-one", config, {}, approval=approval)
+        await s3_stage.run_stage("run-one", config, environment, approval=approval)
+
+
+@pytest.mark.anyio
+async def test_source_revision_mismatch_fails_before_database_or_session(config, monkeypatch):
+    def forbidden(_dsn):
+        pytest.fail("Database was opened")
+
+    monkeypatch.setattr(s3_stage, "database_runtime_lifespan", forbidden)
+    approval = SavedMessagesApproval(
+        uuid4(),
+        config.grant_id,
+        "b" * 64,
+        config.grant_expires_at,
+        config.approval_ref,
+        config.source_revision,
+    )
+    with pytest.raises(CommandRuntimeError, match="s3_source_revision_mismatch"):
+        await s3_stage.run_stage(
+            "run-one",
+            config,
+            {"GATE_PERSONAL_RUNTIME_ENABLED": "true", "RAILWAY_GIT_COMMIT_SHA": "b" * 40},
+            approval=approval,
+        )
 
 
 @pytest.mark.anyio
 async def test_prepared_account_and_exact_migration_are_required(config, staging_db):
     journal = S3StageJournal(staging_db, config)
     await journal.check_binding()
-    assert await s3_stage.run_stage("preflight", config, {}) == {
+    assert await s3_stage.run_stage("preflight", config, stage_env(config)) == {
         "account": "RU",
         "state": "journal_ready",
+        "source_revision": config.source_revision,
         "provider_calls": 0,
     }
     async with staging_db.begin() as session:
@@ -237,7 +276,7 @@ async def test_one_queued_work_operation_reaches_the_shared_worker_and_receipt(
     monkeypatch.setattr(s3_stage, "TelethonRuntimeClient", Client)
     monkeypatch.setattr(s3_stage, "SqlPersonalTelegramSendFence", lambda *a, **kw: fake_fence)
     app = personal_stage.create_app(config)
-    environment = {"GATE_PERSONAL_RUNTIME_ENABLED": "true"}
+    environment = stage_env(config, GATE_PERSONAL_RUNTIME_ENABLED="true")
     async with (
         app.router.lifespan_context(app),
         httpx.AsyncClient(
@@ -256,7 +295,9 @@ async def test_one_queued_work_operation_reaches_the_shared_worker_and_receipt(
 
         before = (await call(client, "readiness", {}, token))["structuredContent"]
         assert "test_target" not in before and not before["runtime_connected"]
-        assert (await s3_stage.run_stage("provision", config, {}))["provider_calls"] == 0
+        assert (await s3_stage.run_stage("provision", config, stage_env(config)))[
+            "provider_calls"
+        ] == 0
         after = (await call(client, "readiness", {}, token))["structuredContent"]
         message = "synthetic S3"
         prepared = (
@@ -277,7 +318,16 @@ async def test_one_queued_work_operation_reaches_the_shared_worker_and_receipt(
             config.grant_id,
             hashlib.sha256(message.encode()).hexdigest(),
             datetime.now(UTC) + timedelta(minutes=1),
+            config.approval_ref,
+            config.source_revision,
         )
+        for changed in (
+            replace(approval, approval_ref="other-owner-approval"),
+            replace(approval, source_revision="b" * 40),
+        ):
+            with pytest.raises(CommandRuntimeError, match="s3_permit_scope_mismatch"):
+                await s3_stage.run_stage("run-one", config, environment, approval=changed)
+        assert vault_reads == []
         with pytest.raises(CommandRuntimeError, match="s3_approved_text_mismatch"):
             await s3_stage.run_stage(
                 "run-one", config, environment, approval=replace(approval, text_sha256="b" * 64)
@@ -285,9 +335,22 @@ async def test_one_queued_work_operation_reaches_the_shared_worker_and_receipt(
         assert vault_reads == []
 
         worker = await s3_stage.run_stage("run-one", config, environment, approval=approval)
-        assert worker == {"account": "RU", "state": "disconnected", "error_code": None}
+        assert worker == {
+            "account": "RU",
+            "state": "disconnected",
+            "error_code": None,
+            "source_revision": config.source_revision,
+        }
         assert len(sent) == 1 and sent[0][0] == message
         assert fake_fence.reservations[0].physical_peer_key == "user:42"
+        expected_permit_digest = hashlib.sha256(
+            (
+                f"{approval.operation_id.hex}:{approval.delegation_id.hex}:"
+                f"{approval.expires_at.astimezone(UTC).isoformat()}:"
+                f"{approval.approval_ref}:{approval.source_revision}"
+            ).encode()
+        ).hexdigest()
+        assert fake_fence.reservations[0].approval_digest == expected_permit_digest
         result = (await call(client, "result", operation, token))["structuredContent"]
         assert result["state"] == "succeeded" and result["sent"] is True
         assert result["receipt_ref"] == "telegram_321"

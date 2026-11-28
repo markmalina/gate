@@ -54,6 +54,7 @@ class S3StageSettings(StageSettings):
 
     enabled: bool = False
     expected_provider_owner: int = Field(gt=0, lt=2**63)
+    source_revision: str = Field(pattern=r"^[a-f0-9]{40}$")
 
     @model_validator(mode="after")
     def validate_s3(self) -> S3StageSettings:
@@ -81,11 +82,17 @@ class S3StageSettings(StageSettings):
         if not self.enabled:
             raise CommandRuntimeError("s3_stage_disabled")
 
+    def require_source(self, environment: Mapping[str, str]) -> None:
+        if environment.get("RAILWAY_GIT_COMMIT_SHA") != self.source_revision:
+            raise CommandRuntimeError("s3_source_revision_mismatch")
+
 
 def load_s3_stage() -> S3StageSettings:
     if os.environ.get("GATE_PERSONAL_S3_STAGE_ENABLED") != "true":
         raise CommandRuntimeError("s3_stage_disabled")
-    return S3StageSettings()  # type: ignore[call-arg]
+    config = S3StageSettings()  # type: ignore[call-arg]
+    config.require_source(os.environ)
+    return config
 
 
 class S3StageJournal(StageJournal):
@@ -94,6 +101,8 @@ class S3StageJournal(StageJournal):
         super().__init__(
             sessions, config, peer=PeerIdentity("self", config.expected_provider_owner)
         )
+        self.approval_ref = config.approval_ref
+        self.source_revision = config.source_revision
 
     async def readiness(self, *, principal: Principal) -> dict[str, Any]:
         result = await super().readiness(principal=principal)
@@ -131,6 +140,11 @@ class S3StageJournal(StageJournal):
 
     async def check_queued(self, approval: SavedMessagesApproval) -> datetime:
         now = utc_now()
+        if (
+            approval.approval_ref != self.approval_ref
+            or approval.source_revision != self.source_revision
+        ):
+            raise CommandRuntimeError("s3_permit_scope_mismatch")
         if not now < approval.expires_at <= self.grant.expires_at:
             raise CommandRuntimeError("s3_approval_window_invalid")
         async with self.store.sessions.begin() as session:
@@ -164,6 +178,7 @@ class S3StageJournal(StageJournal):
                 capability=row.capability,
                 peer=self.peer,
                 now=now,
+                approval_ref=approval.approval_ref,
             )
             return min(approval.expires_at, _utc(row.expires_at))
 
@@ -176,8 +191,14 @@ async def run_stage(
     approval: SavedMessagesApproval | None = None,
 ) -> dict[str, Any]:
     config.require_enabled()
+    config.require_source(environment)
     if action == "validate":
-        return {"account": "RU", "state": "configuration_valid", "provider_calls": 0}
+        return {
+            "account": "RU",
+            "state": "configuration_valid",
+            "source_revision": config.source_revision,
+            "provider_calls": 0,
+        }
     if action == "run-one":
         if approval is None:
             raise CommandRuntimeError("s3_exact_operation_required")
@@ -188,12 +209,22 @@ async def run_stage(
         journal = S3StageJournal(db.session_factory, config)
         await journal.check_binding()
         if action == "preflight":
-            return {"account": "RU", "state": "journal_ready", "provider_calls": 0}
+            return {
+                "account": "RU",
+                "state": "journal_ready",
+                "source_revision": config.source_revision,
+                "provider_calls": 0,
+            }
         if action == "provision":
             await journal.grants.install_approved_grant(
                 journal.grant, approval_ref=config.approval_ref, now=utc_now()
             )
-            return {"account": "RU", "state": "grant_prepared", "provider_calls": 0}
+            return {
+                "account": "RU",
+                "state": "grant_prepared",
+                "source_revision": config.source_revision,
+                "provider_calls": 0,
+            }
         if approval is None:
             raise CommandRuntimeError("s3_exact_operation_required")
         deadline = await journal.check_queued(approval)
@@ -225,7 +256,12 @@ async def run_stage(
             ),
         )
         outcome = await run_worker(worker, seconds)
-        return {"account": "RU", "state": outcome.state, "error_code": outcome.code}
+        return {
+            "account": "RU",
+            "state": outcome.state,
+            "error_code": outcome.code,
+            "source_revision": config.source_revision,
+        }
 
 
 def main() -> None:
@@ -234,6 +270,8 @@ def main() -> None:
     parser.add_argument("--operation-ref")
     parser.add_argument("--text-sha256")
     parser.add_argument("--expires-at")
+    parser.add_argument("--approval-ref")
+    parser.add_argument("--source-revision")
     args = parser.parse_args()
     try:
         config = load_s3_stage()
@@ -244,6 +282,8 @@ def main() -> None:
                 or re.fullmatch(r"operation_[0-9a-f]{32}", args.operation_ref) is None
                 or args.text_sha256 is None
                 or args.expires_at is None
+                or args.approval_ref is None
+                or args.source_revision is None
             ):
                 raise CommandRuntimeError("s3_exact_operation_required")
             approval = SavedMessagesApproval(
@@ -251,6 +291,8 @@ def main() -> None:
                 config.grant_id,
                 args.text_sha256,
                 datetime.fromisoformat(args.expires_at),
+                args.approval_ref,
+                args.source_revision,
             )
         outcome = asyncio.run(run_stage(args.action, config, os.environ, approval=approval))
     except (CommandRuntimeError, PersonalTelegramTransportError) as exc:

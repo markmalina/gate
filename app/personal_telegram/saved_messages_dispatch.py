@@ -31,6 +31,8 @@ class SavedMessagesApproval:
     delegation_id: UUID
     text_sha256: str
     expires_at: datetime
+    approval_ref: str
+    source_revision: str
 
     def __post_init__(self) -> None:
         if (
@@ -40,6 +42,10 @@ class SavedMessagesApproval:
             or re.fullmatch(r"[a-f0-9]{64}", self.text_sha256) is None
             or not isinstance(self.expires_at, datetime)
             or self.expires_at.utcoffset() is None
+            or not isinstance(self.approval_ref, str)
+            or re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", self.approval_ref) is None
+            or not isinstance(self.source_revision, str)
+            or re.fullmatch(r"[a-f0-9]{40}", self.source_revision) is None
         ):
             raise CommandRuntimeError("saved_messages_approval_invalid")
 
@@ -94,7 +100,8 @@ class SavedMessagesDispatcher:
             exact_text_digest=self.approval.text_sha256,
             approval_digest=_sha256(
                 f"{command.operation_id.hex}:{command.delegation_id.hex}:"
-                f"{self.approval.expires_at.astimezone(UTC).isoformat()}"
+                f"{self.approval.expires_at.astimezone(UTC).isoformat()}:"
+                f"{self.approval.approval_ref}:{self.approval.source_revision}"
             ),
             idempotency_key="send_" + command.operation_id.hex,
             now=now,

@@ -158,6 +158,8 @@ async def test_postgres_saved_messages_commits_both_reservations_before_single_s
             pg_runtime.delegation.delegation_id,
             hashlib.sha256(b"synthetic").hexdigest(),
             NOW + timedelta(minutes=2),
+            "synthetic-approval",
+            "a" * 40,
         ),
         SqlPersonalTelegramSendFence(pg_runtime.sessions, enabled=True),
     )

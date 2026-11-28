@@ -662,6 +662,8 @@ def saved_dispatch(runtime, operation, fence, *, text="synthetic"):
         runtime.delegation.delegation_id,
         hashlib.sha256(text.encode()).hexdigest(),
         NOW + timedelta(minutes=2),
+        "synthetic-approval",
+        "a" * 40,
     )
     return SavedMessagesDispatcher(approval, fence)
 

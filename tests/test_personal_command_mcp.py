@@ -533,6 +533,8 @@ async def test_work_queue_dispatch_receipt_is_end_to_end_and_unknown_is_not_sent
                     delegation.delegation_id,
                     hashlib.sha256(text.encode()).hexdigest(),
                     now + timedelta(minutes=1),
+                    "synthetic-approval",
+                    "a" * 40,
                 ),
                 ReceiptFence(),
             )

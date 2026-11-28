@@ -281,6 +281,7 @@ class SqlGrantRegistry:
         capability: str,
         peer: PeerIdentity,
         now: datetime,
+        approval_ref: str | None = None,
     ) -> CommandDelegation:
         """Trusted worker rechecks a stored operation in the caller transaction."""
         _clock(now)
@@ -290,6 +291,8 @@ class SqlGrantRegistry:
             raise CommandRuntimeError("ru_scope_denied")
         try:
             row = await self._row(session, delegation_id, client_namespace)
+            if approval_ref is not None and row.approval_ref != approval_ref:
+                raise CommandRuntimeError("delegation_approval_mismatch")
             if row.revoked or _utc(row.expires_at) <= now:
                 raise CommandRuntimeError("delegation_inactive")
             grant = self._decode(row)
