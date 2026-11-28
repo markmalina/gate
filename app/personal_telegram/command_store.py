@@ -562,7 +562,9 @@ class SqlCommandStore:
                 row.error_code = "cancelled_after_dispatch"
             return _status(row)
 
-    async def claim(self, token: LeaseToken, *, now: datetime) -> ClaimedCommand | None:
+    async def claim(
+        self, token: LeaseToken, *, now: datetime, operation_id: UUID | None = None
+    ) -> ClaimedCommand | None:
         """Reserve durably, NOT authorize dispatch. V2 fresh grant/guard is mandatory."""
         async with self.sessions.begin() as session:
             binding = await self._binding(session)
@@ -579,7 +581,7 @@ class SqlCommandStore:
                 )
                 .exists()
             )
-            row = await session.scalar(
+            queued = (
                 select(RuntimeOperationRow)
                 .where(
                     RuntimeOperationRow.binding_id == self.scope.binding_id,
@@ -591,6 +593,9 @@ class SqlCommandStore:
                 .with_for_update(skip_locked=True)
                 .limit(1)
             )
+            if operation_id is not None:
+                queued = queued.where(RuntimeOperationRow.id == operation_id)
+            row = await session.scalar(queued)
             if row is None:
                 return None
             if _utc(row.expires_at) <= now:
@@ -641,6 +646,56 @@ class SqlCommandStore:
                 row.client_namespace,
                 _utc(row.expires_at),
             )
+
+    async def require_dispatch(
+        self,
+        command: ClaimedCommand,
+        token: LeaseToken,
+        *,
+        now: datetime,
+    ) -> datetime:
+        """Recheck the reservation and return the earliest durable I/O deadline."""
+        async with self.sessions.begin() as session:
+            binding = await self._binding(session)
+            self._require_owner(binding, token, now)
+            if (
+                binding.health_state != "ready"
+                or binding.last_verified_generation != token.generation
+                or binding.lease_expires_at is None
+            ):
+                raise CommandRuntimeError("runtime_not_ready")
+            row = await self._operation(session, command.operation_id)
+            attempt = await session.get(RuntimeAttemptRow, command.attempt_id)
+            if (
+                row.state != "running"
+                or row.attempt_id != command.attempt_id
+                or attempt is None
+                or attempt.operation_id != row.id
+                or attempt.state != "unknown"
+                or attempt.lease_owner != token.owner
+                or attempt.lease_generation != token.generation
+                or attempt.random_id != str(command.random_id)
+                or row.delegation_id != command.delegation_id
+                or row.client_namespace != command.client_namespace
+                or row.capability != command.capability
+                or row.peer_key != command.peer_key
+                or self._cipher.unseal(self.scope, row.id, row.payload_ciphertext)
+                != command.payload
+            ):
+                raise CommandRuntimeError("command_dispatch_conflict")
+            if _utc(row.expires_at) <= now:
+                raise CommandRuntimeError("command_expired")
+            peer_kind, provider_id = row.peer_key.split(":")
+            grant = await self._grants().for_operation(
+                session,
+                owner_subject=row.owner_subject,
+                client_namespace=row.client_namespace,
+                delegation_id=row.delegation_id,
+                capability=row.capability,
+                peer=PeerIdentity(peer_kind, int(provider_id)),
+                now=now,
+            )
+            return min(_utc(binding.lease_expires_at), _utc(row.expires_at), grant.expires_at)
 
     async def finish(
         self,

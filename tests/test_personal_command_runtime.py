@@ -3,15 +3,23 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from app.application.personal_telegram_fence import PersonalSendFenceResult
+from app.application.personal_telegram_transport import ProviderOutcome, ProviderSendReceipt
 from app.core.mcp_security import AccessScope, Principal
+from app.infrastructure.personal_telegram_fence import PersonalSendFenceError
 from app.models.domain import TELEGRAM_MARK_BY_ACCOUNT_ID, TELEGRAM_MARK_RU_ACCOUNT_ID
-from app.personal_telegram.cloud_worker import RuCloudWorker, TelegramApplication
+from app.personal_telegram.cloud_worker import (
+    RuCloudWorker,
+    TelegramApplication,
+    TelethonRuntimeClient,
+)
 from app.personal_telegram.command_scope import (
     CommandDelegation,
     CommandRuntimeError,
@@ -27,6 +35,10 @@ from app.personal_telegram.command_store import (
     SqlCommandStore,
 )
 from app.personal_telegram.grant_registry import SqlGrantRegistry
+from app.personal_telegram.saved_messages_dispatch import (
+    SavedMessagesApproval,
+    SavedMessagesDispatcher,
+)
 from app.personal_telegram.session_persistence import (
     EncryptedSessionRecord,
     SessionCipher,
@@ -375,7 +387,7 @@ class FakeClient:
         return self.connected
 
 
-def worker(runtime, client, *, enabled=True):
+def worker(runtime, client, *, enabled=True, saved_messages=None, clock=lambda: NOW):
     return RuCloudWorker(
         store=runtime.store,
         cipher=runtime.cipher,
@@ -383,7 +395,8 @@ def worker(runtime, client, *, enabled=True):
         expected_provider_user_id=42,
         client_factory=lambda session: client,
         enabled=enabled,
-        clock=lambda: NOW,
+        saved_messages=saved_messages,
+        clock=clock,
     )
 
 
@@ -597,3 +610,187 @@ async def test_unbound_grant_registry_cannot_prepare(runtime):
             payload={"text": "synthetic"},
             now=NOW,
         )
+
+
+class RecordingSavedMessagesFence:
+    def __init__(self, *, refused=False, replay=False, after_reserve=None, lose_receipt=False):
+        self.refused = refused
+        self.replay = replay
+        self.after_reserve = after_reserve
+        self.lose_receipt = lose_receipt
+        self.reservations = []
+        self.finishes = []
+        self.fence_id = uuid4()
+
+    async def reserve(self, command):
+        self.reservations.append(command)
+        if self.refused:
+            raise PersonalSendFenceError("synthetic_admission_refused")
+        if self.after_reserve is not None:
+            await self.after_reserve()
+        return PersonalSendFenceResult(self.fence_id, "unknown", None, self.replay)
+
+    async def finalize(self, command, *, outcome, receipt_ref, external_effect_performed):
+        assert command == self.reservations[-1]
+        self.finishes.append((outcome, receipt_ref, external_effect_performed))
+        if self.lose_receipt:
+            raise OSError("synthetic lost acknowledgement")
+        return PersonalSendFenceResult(self.fence_id, outcome, receipt_ref, False)
+
+
+class RecordingSavedMessagesClient(FakeClient):
+    def __init__(self, stop, fence, *, timeout=False, owner=42):
+        super().__init__(stop, owner=owner)
+        self.fence = fence
+        self.timeout = timeout
+        self.sends = []
+
+    async def owner_id(self):
+        return self.owner
+
+    async def send_saved_message(self, text, random_id):
+        assert self.is_connected() and len(self.fence.reservations) == 1
+        self.sends.append((text, random_id))
+        if self.timeout:
+            raise TimeoutError
+        return ProviderSendReceipt(ProviderOutcome.SENT, "telegram_123", True)
+
+
+def saved_dispatch(runtime, operation, fence, *, text="synthetic"):
+    approval = SavedMessagesApproval(
+        operation.operation_id,
+        runtime.delegation.delegation_id,
+        hashlib.sha256(text.encode()).hexdigest(),
+        NOW + timedelta(minutes=2),
+    )
+    return SavedMessagesDispatcher(approval, fence)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("timeout", "lose_receipt", "outcome"),
+    [(False, False, "succeeded"), (True, False, "unknown"), (False, True, "unknown")],
+)
+async def test_saved_messages_dispatches_one_approved_intent(
+    runtime, timeout, lose_receipt, outcome
+):
+    unrelated = await enqueue(runtime, "earlier-channel", peer=PeerIdentity("channel", 42))
+    operation = await enqueue(runtime, "approved-self", peer=PeerIdentity("self", 42))
+    fence = RecordingSavedMessagesFence(lose_receipt=lose_receipt)
+    stop = asyncio.Event()
+    client = RecordingSavedMessagesClient(stop, fence, timeout=timeout)
+    dispatcher = saved_dispatch(runtime, operation, fence)
+    result = await asyncio.wait_for(
+        worker(runtime, client, saved_messages=dispatcher).run_until(stop), timeout=2
+    )
+    assert result.state == "disconnected"
+    assert not client.connected and len(client.sends) == 1
+    entry = fence.reservations[0]
+    assert entry.physical_peer_key == "user:42" and entry.draft_id is None
+    assert entry.idempotency_key == "send_" + operation.operation_id.hex
+    status = await runtime.store.status(operation.operation_id, principal=runtime.principal)
+    assert status.state == outcome
+    assert status.receipt_ref == ("telegram_123" if outcome == "succeeded" else None)
+    assert (
+        await runtime.store.status(unrelated.operation_id, principal=runtime.principal)
+    ).state == "queued"
+    async with runtime.sessions() as session:
+        attempt = (await session.scalars(select(RuntimeAttemptRow))).one()
+        assert client.sends == [("synthetic", int(attempt.random_id))]
+    token = await runtime.store.acquire_owner(now=NOW, ttl=TTL)
+    await runtime.store.renew_owner(token, now=NOW, ttl=TTL, health="ready", verified=True)
+    assert (
+        await dispatcher.dispatch_once(
+            runtime.store,
+            token,
+            verified_owner_id=42,
+            send=client.send_saved_message,
+            clock=lambda: NOW,
+            stop=stop,
+        )
+        is None
+    )
+    await runtime.store.release_disconnected_owner(token)
+    assert len(client.sends) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "change", ["revoke", "cancel", "expiry", "refuse", "replay", "text", "peer"]
+)
+async def test_saved_messages_refuses_changed_or_unadmitted_commands(runtime, change):
+    peer = PeerIdentity("channel", 42) if change == "peer" else PeerIdentity("self", 42)
+    operation = await enqueue(runtime, "admission-case", peer=peer)
+    time = NOW
+
+    async def change_after_reservation():
+        nonlocal time
+        if change == "revoke":
+            await runtime.grants.revoke(
+                principal=runtime.principal,
+                delegation_id=runtime.delegation.delegation_id,
+                expected_revision=0,
+                now=NOW,
+            )
+        if change == "cancel":
+            await runtime.store.cancel(operation.operation_id, principal=runtime.principal, now=NOW)
+        if change == "expiry":
+            time += timedelta(seconds=10)
+
+    fence = RecordingSavedMessagesFence(
+        refused=change == "refuse",
+        replay=change == "replay",
+        after_reserve=change_after_reservation,
+    )
+    stop = asyncio.Event()
+    client = RecordingSavedMessagesClient(stop, fence)
+    dispatcher = saved_dispatch(
+        runtime, operation, fence, text="other message" if change == "text" else "synthetic"
+    )
+    if change == "expiry":
+        dispatcher = replace(
+            dispatcher, approval=replace(dispatcher.approval, expires_at=NOW + timedelta(seconds=5))
+        )
+    result = await asyncio.wait_for(
+        worker(runtime, client, saved_messages=dispatcher, clock=lambda: time).run_until(stop),
+        timeout=2,
+    )
+    assert result.state == "disconnected" and client.sends == []
+    status = await runtime.store.status(operation.operation_id, principal=runtime.principal)
+    assert status.state == ("unknown" if change == "replay" else "rejected")
+    assert status.receipt_ref is None
+    if change in {"revoke", "cancel", "expiry"}:
+        assert fence.finishes == [("rejected", None, False)]
+    if change in {"text", "peer"}:
+        assert fence.reservations == []
+
+
+@pytest.mark.anyio
+async def test_saved_messages_is_opt_in_for_verified_worker(runtime):
+    operation = await enqueue(runtime, "read-only-worker", peer=PeerIdentity("self", 42))
+    stop = asyncio.Event()
+    client = FakeClient(stop)
+    assert (await worker(runtime, client).run_until(stop)).state == "disconnected"
+    assert (
+        await runtime.store.status(operation.operation_id, principal=runtime.principal)
+    ).state == "queued"
+
+
+@pytest.mark.anyio
+async def test_telethon_saved_messages_has_no_address_parameter(monkeypatch):
+    from telethon import functions, types
+    from telethon.sessions import StringSession
+
+    client = TelethonRuntimeClient(StringSession(), TelegramApplication(123, "a" * 32))
+    sent = []
+
+    async def fake_rpc(request):
+        sent.append(request)
+        return types.UpdateShortSentMessage(123, 10, 1, NOW, out=True)
+
+    monkeypatch.setattr(client, "_client", fake_rpc)
+    receipt = await client.send_saved_message("synthetic", 42)
+    assert receipt == ProviderSendReceipt(ProviderOutcome.SENT, "telegram_123", True)
+    assert len(sent) == 1 and isinstance(sent[0], functions.messages.SendMessageRequest)
+    assert isinstance(sent[0].peer, types.InputPeerSelf)
+    assert sent[0].random_id == 42 and sent[0].message == "synthetic"
