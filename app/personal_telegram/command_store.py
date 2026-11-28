@@ -103,10 +103,25 @@ class RuntimeOperationRow(PersonalRuntimeBase):
             "request_key",
             name="uq_personal_command_intent",
         ),
+        UniqueConstraint(
+            "binding_id",
+            "permit_approval_ref",
+            name="uq_personal_command_s3_permit_approval",
+        ),
         CheckConstraint(
             "state IN ('prepared','queued','running','succeeded','rejected',"
             "'cancelled','expired','unknown')",
             name="ck_personal_command_state",
+        ),
+        CheckConstraint(
+            "(permit_approval_ref IS NULL AND permit_source_revision IS NULL "
+            "AND permit_text_sha256 IS NULL AND permit_expires_at IS NULL) OR "
+            "(permit_approval_ref IS NOT NULL AND permit_source_revision IS NOT NULL "
+            "AND permit_text_sha256 IS NOT NULL AND permit_expires_at IS NOT NULL "
+            "AND length(permit_approval_ref) BETWEEN 1 AND 128 "
+            "AND length(permit_source_revision) = 40 "
+            "AND length(permit_text_sha256) = 64)",
+            name="ck_personal_command_s3_permit_bundle",
         ),
     )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -126,6 +141,12 @@ class RuntimeOperationRow(PersonalRuntimeBase):
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     receipt_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
     attempt_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    permit_approval_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    permit_source_revision: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    permit_text_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    permit_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class RuntimeAttemptRow(PersonalRuntimeBase):
@@ -155,6 +176,27 @@ class OperationStatus:
     replay: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class OperationPermit:
+    approval_ref: str
+    source_revision: str
+    text_sha256: str
+    expires_at: datetime
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.approval_ref, str)
+            or re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", self.approval_ref) is None
+            or not isinstance(self.source_revision, str)
+            or re.fullmatch(r"[a-f0-9]{40}", self.source_revision) is None
+            or not isinstance(self.text_sha256, str)
+            or re.fullmatch(r"[a-f0-9]{64}", self.text_sha256) is None
+            or not isinstance(self.expires_at, datetime)
+            or self.expires_at.utcoffset() is None
+        ):
+            raise CommandRuntimeError("command_permit_invalid")
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class ClaimedCommand:
     operation_id: UUID
@@ -166,6 +208,7 @@ class ClaimedCommand:
     delegation_id: UUID
     client_namespace: str
     expires_at: datetime
+    permit: OperationPermit | None
 
 
 class CommandPayloadCipher:
@@ -333,7 +376,7 @@ class SqlCommandStore:
 
     @staticmethod
     def _require_owner(row: RuntimeBindingRow, token: LeaseToken, now: datetime) -> None:
-        if now.tzinfo is None:
+        if now.tzinfo is None or now.utcoffset() is None:
             raise CommandRuntimeError("lease_clock_invalid")
         if (
             row.lease_owner != token.owner
@@ -562,10 +605,78 @@ class SqlCommandStore:
                 row.error_code = "cancelled_after_dispatch"
             return _status(row)
 
+    async def install_permit(
+        self,
+        operation_id: UUID,
+        *,
+        permit: OperationPermit,
+        now: datetime,
+    ) -> datetime:
+        """Persist one immutable operator permit before the session/provider path."""
+        if now.tzinfo is None:
+            raise CommandRuntimeError("timezone_required")
+        try:
+            async with self.sessions.begin() as session:
+                row = await self._operation(session, operation_id)
+                existing = _operation_permit(row)
+                if existing is not None:
+                    if existing != permit:
+                        raise CommandRuntimeError("command_permit_conflict")
+                    return existing.expires_at
+                if row.state != "queued" or _utc(row.expires_at) <= now:
+                    raise CommandRuntimeError("command_permit_operation_inactive")
+                payload = self._cipher.unseal(self.scope, row.id, row.payload_ciphertext)
+                message = payload.get("text")
+                if (
+                    row.capability != "send_text"
+                    or set(payload) != {"text"}
+                    or not isinstance(message, str)
+                    or hashlib.sha256(message.encode()).hexdigest() != permit.text_sha256
+                ):
+                    raise CommandRuntimeError("command_permit_text_mismatch")
+                peer_type, provider_id = row.peer_key.split(":")
+                grant = await self._grants().for_operation(
+                    session,
+                    owner_subject=row.owner_subject,
+                    client_namespace=row.client_namespace,
+                    delegation_id=row.delegation_id,
+                    capability=row.capability,
+                    peer=PeerIdentity(peer_type, int(provider_id)),
+                    now=now,
+                    approval_ref=permit.approval_ref,
+                )
+                if not now < permit.expires_at <= min(_utc(row.expires_at), grant.expires_at):
+                    raise CommandRuntimeError("command_permit_window_invalid")
+                if any(
+                    value is not None
+                    for value in (
+                        row.permit_approval_ref,
+                        row.permit_source_revision,
+                        row.permit_text_sha256,
+                        row.permit_expires_at,
+                    )
+                ):
+                    raise CommandRuntimeError("command_permit_conflict")
+                row.permit_approval_ref = permit.approval_ref
+                row.permit_source_revision = permit.source_revision
+                row.permit_text_sha256 = permit.text_sha256
+                row.permit_expires_at = permit.expires_at
+                await session.flush()
+                return permit.expires_at
+        except IntegrityError:
+            raise CommandRuntimeError("command_permit_conflict") from None
+
     async def claim(
-        self, token: LeaseToken, *, now: datetime, operation_id: UUID | None = None
+        self,
+        token: LeaseToken,
+        *,
+        now: datetime,
+        operation_id: UUID | None = None,
+        permit: OperationPermit | None = None,
     ) -> ClaimedCommand | None:
         """Reserve durably, NOT authorize dispatch. V2 fresh grant/guard is mandatory."""
+        if permit is not None and operation_id is None:
+            raise CommandRuntimeError("command_permit_operation_required")
         async with self.sessions.begin() as session:
             binding = await self._binding(session)
             self._require_owner(binding, token, now)
@@ -595,12 +706,19 @@ class SqlCommandStore:
             )
             if operation_id is not None:
                 queued = queued.where(RuntimeOperationRow.id == operation_id)
+            if permit is None:
+                queued = queued.where(RuntimeOperationRow.permit_approval_ref.is_(None))
             row = await session.scalar(queued)
             if row is None:
                 return None
             if _utc(row.expires_at) <= now:
                 row.state = "expired"
                 return None
+            stored_permit = _operation_permit(row)
+            if stored_permit != permit:
+                raise CommandRuntimeError("command_permit_conflict")
+            if stored_permit is not None and stored_permit.expires_at <= now:
+                raise CommandRuntimeError("command_permit_inactive")
             peer_type, provider_id = row.peer_key.split(":")
             try:
                 await self._grants().for_operation(
@@ -611,6 +729,7 @@ class SqlCommandStore:
                     capability=row.capability,
                     peer=PeerIdentity(peer_type, int(provider_id)),
                     now=now,
+                    approval_ref=stored_permit.approval_ref if stored_permit else None,
                 )
             except CommandRuntimeError as exc:
                 row.state = "rejected"
@@ -645,6 +764,7 @@ class SqlCommandStore:
                 row.delegation_id,
                 row.client_namespace,
                 _utc(row.expires_at),
+                stored_permit,
             )
 
     async def require_dispatch(
@@ -681,6 +801,7 @@ class SqlCommandStore:
                 or row.peer_key != command.peer_key
                 or self._cipher.unseal(self.scope, row.id, row.payload_ciphertext)
                 != command.payload
+                or _operation_permit(row) != command.permit
             ):
                 raise CommandRuntimeError("command_dispatch_conflict")
             if _utc(row.expires_at) <= now:
@@ -694,8 +815,14 @@ class SqlCommandStore:
                 capability=row.capability,
                 peer=PeerIdentity(peer_kind, int(provider_id)),
                 now=now,
+                approval_ref=command.permit.approval_ref if command.permit else None,
             )
-            return min(_utc(binding.lease_expires_at), _utc(row.expires_at), grant.expires_at)
+            deadlines = [_utc(binding.lease_expires_at), _utc(row.expires_at), grant.expires_at]
+            if command.permit is not None:
+                if command.permit.expires_at <= now:
+                    raise CommandRuntimeError("command_permit_inactive")
+                deadlines.append(command.permit.expires_at)
+            return min(deadlines)
 
     async def finish(
         self,
@@ -750,6 +877,25 @@ def _utc(value: datetime) -> datetime:
 
 def _status(row: RuntimeOperationRow, *, replay: bool = False) -> OperationStatus:
     return OperationStatus(row.id, row.state, row.receipt_ref, row.error_code, replay)
+
+
+def _operation_permit(row: RuntimeOperationRow) -> OperationPermit | None:
+    values = (
+        row.permit_approval_ref,
+        row.permit_source_revision,
+        row.permit_text_sha256,
+        row.permit_expires_at,
+    )
+    if all(value is None for value in values):
+        return None
+    if any(value is None for value in values):
+        raise CommandRuntimeError("command_permit_conflict")
+    return OperationPermit(
+        approval_ref=row.permit_approval_ref,  # type: ignore[arg-type]
+        source_revision=row.permit_source_revision,  # type: ignore[arg-type]
+        text_sha256=row.permit_text_sha256,  # type: ignore[arg-type]
+        expires_at=_utc(row.permit_expires_at),  # type: ignore[arg-type]
+    )
 
 
 def _replay(row: RuntimeOperationRow, fingerprint: str) -> OperationStatus:

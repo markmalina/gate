@@ -18,7 +18,12 @@ from app.application.personal_telegram_transport import (
 )
 from app.infrastructure.personal_telegram_fence import PersonalSendFenceError
 from app.personal_telegram.command_scope import CommandRuntimeError, PeerIdentity
-from app.personal_telegram.command_store import LeaseToken, OperationStatus, SqlCommandStore
+from app.personal_telegram.command_store import (
+    LeaseToken,
+    OperationPermit,
+    OperationStatus,
+    SqlCommandStore,
+)
 
 SEND_TIMEOUT_SECONDS = 15
 
@@ -49,6 +54,14 @@ class SavedMessagesApproval:
         ):
             raise CommandRuntimeError("saved_messages_approval_invalid")
 
+    def permit(self) -> OperationPermit:
+        return OperationPermit(
+            approval_ref=self.approval_ref,
+            source_revision=self.source_revision,
+            text_sha256=self.text_sha256,
+            expires_at=self.expires_at,
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class SavedMessagesDispatcher:
@@ -68,7 +81,14 @@ class SavedMessagesDispatcher:
         now = clock()
         if stop.is_set() or now >= self.approval.expires_at:
             return None
-        command = await store.claim(token, now=now, operation_id=self.approval.operation_id)
+        permit = self.approval.permit()
+        await store.install_permit(self.approval.operation_id, permit=permit, now=now)
+        command = await store.claim(
+            token,
+            now=now,
+            operation_id=self.approval.operation_id,
+            permit=permit,
+        )
         if command is None:
             return None
         text = command.payload.get("text")

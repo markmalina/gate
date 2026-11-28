@@ -29,9 +29,11 @@ from app.personal_telegram.command_scope import (
 )
 from app.personal_telegram.command_store import (
     CommandPayloadCipher,
+    OperationPermit,
     PersonalRuntimeBase,
     RuntimeAttemptRow,
     RuntimeBindingRow,
+    RuntimeOperationRow,
     SqlCommandStore,
 )
 from app.personal_telegram.grant_registry import SqlGrantRegistry
@@ -669,6 +671,66 @@ def saved_dispatch(runtime, operation, fence, *, text="synthetic"):
 
 
 @pytest.mark.anyio
+async def test_exact_operation_permit_is_durable_immutable_and_claim_bound(runtime):
+    operation = await enqueue(runtime, "durable-permit", peer=PeerIdentity("self", 42))
+    permit = OperationPermit(
+        approval_ref="synthetic-approval",
+        source_revision="a" * 40,
+        text_sha256=hashlib.sha256(b"synthetic").hexdigest(),
+        expires_at=NOW + timedelta(minutes=2),
+    )
+    assert (
+        await runtime.store.install_permit(operation.operation_id, permit=permit, now=NOW)
+        == permit.expires_at
+    )
+    assert (
+        await runtime.store.install_permit(operation.operation_id, permit=permit, now=NOW)
+        == permit.expires_at
+    )
+    with pytest.raises(CommandRuntimeError, match="command_permit_conflict"):
+        await runtime.store.install_permit(
+            operation.operation_id,
+            permit=replace(permit, source_revision="b" * 40),
+            now=NOW,
+        )
+    other = await enqueue(runtime, "same-approval-other-operation", peer=PeerIdentity("self", 42))
+    with pytest.raises(CommandRuntimeError, match="command_permit_conflict"):
+        await runtime.store.install_permit(other.operation_id, permit=permit, now=NOW)
+
+    async with runtime.sessions() as session:
+        row = await session.get(RuntimeOperationRow, operation.operation_id)
+        assert row is not None
+        assert (
+            row.permit_approval_ref,
+            row.permit_source_revision,
+            row.permit_text_sha256,
+            row.permit_expires_at.replace(tzinfo=UTC),
+        ) == (
+            permit.approval_ref,
+            permit.source_revision,
+            permit.text_sha256,
+            permit.expires_at,
+        )
+
+    token = await runtime.store.acquire_owner(now=NOW, ttl=TTL)
+    await runtime.store.renew_owner(token, now=NOW, ttl=TTL, health="ready", verified=True)
+    with pytest.raises(CommandRuntimeError, match="command_permit_conflict"):
+        await runtime.store.claim(
+            token,
+            now=NOW,
+            operation_id=operation.operation_id,
+            permit=replace(permit, text_sha256="b" * 64),
+        )
+    async with runtime.sessions() as session:
+        assert (await session.scalars(select(RuntimeAttemptRow))).all() == []
+    command = await runtime.store.claim(
+        token, now=NOW, operation_id=operation.operation_id, permit=permit
+    )
+    assert command is not None and command.permit == permit
+    await runtime.store.release_disconnected_owner(token)
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("timeout", "lose_receipt", "outcome"),
     [(False, False, "succeeded"), (True, False, "unknown"), (False, True, "unknown")],
@@ -757,9 +819,13 @@ async def test_saved_messages_refuses_changed_or_unadmitted_commands(runtime, ch
         worker(runtime, client, saved_messages=dispatcher, clock=lambda: time).run_until(stop),
         timeout=2,
     )
-    assert result.state == "disconnected" and client.sends == []
+    assert result.state == ("failed" if change == "text" else "disconnected")
+    assert client.sends == []
     status = await runtime.store.status(operation.operation_id, principal=runtime.principal)
-    assert status.state == ("unknown" if change == "replay" else "rejected")
+    expected_state = (
+        "queued" if change == "text" else "unknown" if change == "replay" else "rejected"
+    )
+    assert status.state == expected_state
     assert status.receipt_ref is None
     if change in {"revoke", "cancel", "expiry"}:
         assert fence.finishes == [("rejected", None, False)]

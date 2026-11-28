@@ -468,15 +468,6 @@ async def test_work_queue_dispatch_receipt_is_end_to_end_and_unknown_is_not_sent
         grants = SqlGrantRegistry(
             sessions, scope=scope, policy_key=Fernet.generate_key(), key_version="synthetic-v1"
         )
-        delegation = CommandDelegation(
-            uuid4(),
-            scope,
-            personal_client_namespace(principal),
-            frozenset({"send_text"}),
-            frozenset({"user:42"}),
-            now + timedelta(hours=1),
-        )
-        await grants.install_approved_grant(delegation, approval_ref="synthetic-approval", now=now)
         store = SqlCommandStore(
             sessions,
             scope=scope,
@@ -485,9 +476,6 @@ async def test_work_queue_dispatch_receipt_is_end_to_end_and_unknown_is_not_sent
         )
         service = PersonalCommandService(
             store, grants, peer_reference_key=Fernet.generate_key(), clock=lambda: now
-        )
-        peer_ref = await service.issue_peer_reference(
-            principal=principal, delegation=delegation, peer=PeerIdentity("self", 42), now=now
         )
         app.state.personal_command_service_factory = lambda _principal: service
         token = _token(key)
@@ -502,6 +490,22 @@ async def test_work_queue_dispatch_receipt_is_end_to_end_and_unknown_is_not_sent
         calls: list[tuple[str, int]] = []
 
         async def run_case(request_key: str, outcome: ProviderOutcome) -> dict[str, Any]:
+            approval_ref = "synthetic-approval-" + request_key
+            delegation = CommandDelegation(
+                uuid4(),
+                scope,
+                personal_client_namespace(principal),
+                frozenset({"send_text"}),
+                frozenset({"user:42"}),
+                now + timedelta(hours=1),
+            )
+            await grants.install_approved_grant(delegation, approval_ref=approval_ref, now=now)
+            peer_ref = await service.issue_peer_reference(
+                principal=principal,
+                delegation=delegation,
+                peer=PeerIdentity("self", 42),
+                now=now,
+            )
             text = "synthetic receipt " + request_key
             prepared = (
                 await _call(
@@ -533,7 +537,7 @@ async def test_work_queue_dispatch_receipt_is_end_to_end_and_unknown_is_not_sent
                     delegation.delegation_id,
                     hashlib.sha256(text.encode()).hexdigest(),
                     now + timedelta(minutes=1),
-                    "synthetic-approval",
+                    approval_ref,
                     "a" * 40,
                 ),
                 ReceiptFence(),

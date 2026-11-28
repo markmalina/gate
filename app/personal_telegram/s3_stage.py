@@ -44,7 +44,7 @@ from app.personal_telegram.saved_messages_dispatch import (
 )
 from app.personal_telegram.work_stage import StageJournal, StageSettings
 
-S3_MIGRATION = "0126_personal_standalone_fence"
+S3_MIGRATION = "0127_personal_s3_operation_permit"
 
 
 class S3StageSettings(StageSettings):
@@ -180,7 +180,12 @@ class S3StageJournal(StageJournal):
                 now=now,
                 approval_ref=approval.approval_ref,
             )
-            return min(approval.expires_at, _utc(row.expires_at))
+        permit_deadline = await self.store.install_permit(
+            approval.operation_id,
+            permit=approval.permit(),
+            now=now,
+        )
+        return min(permit_deadline, approval.expires_at, _utc(row.expires_at))
 
 
 async def run_stage(

@@ -11,7 +11,7 @@ S3 поднимает отдельный Work endpoint по `railway.personal-s3
 | Настройка | Назначение |
 | --- | --- |
 | `GATE_ENV=staging`, `GATE_PERSONAL_S3_STAGE_ENABLED=true` | Явно разрешают отдельный вход S3. Конфигурации действующих S1 и S2 остаются отдельными. |
-| `GATE_PERSONAL_S3_STAGE_DATABASE_URL`, `…_WORKSPACE`, `…_OWNER`, `…_BINDING_ID`, `…_EXPECTED_PROVIDER_OWNER` | Привязка Work и воркера к одной подготовленной RU-установке. Требуется приватная база S2 на ревизии `0126_personal_standalone_fence` и активная запись собственного аккаунта с совпадающим Telegram ID. |
+| `GATE_PERSONAL_S3_STAGE_DATABASE_URL`, `…_WORKSPACE`, `…_OWNER`, `…_BINDING_ID`, `…_EXPECTED_PROVIDER_OWNER` | Привязка Work и воркера к одной подготовленной RU-установке. Требуется приватная база S2 на ревизии `0127_personal_s3_operation_permit` и активная запись собственного аккаунта с совпадающим Telegram ID. |
 | `GATE_PERSONAL_S3_STAGE_RESOURCE`, `…_ISSUER`, `…_JWKS_URL`, `…_CLIENT_ID` | Отдельный адрес MCP и проверяемый OAuth-клиент. Подписанные owner, client, workspace и RU account должны соответствовать установке. |
 | `GATE_PERSONAL_S3_STAGE_MASTER_KEY` | Отдельный секрет, одинаковый у S3 MCP и оператора воркера. Из него выводятся ключи журнала, гранта и ссылок на адресата. |
 | `GATE_PERSONAL_S3_STAGE_GRANT_ID`, `…_GRANT_EXPIRES_AT`, `…_APPROVAL_REF` | Привязка к точному допуску на собственное «Избранное». Грант создаёт только оператор, веб-запуск не создаёт его. |
@@ -36,6 +36,11 @@ S3 поднимает отдельный Work endpoint по `railway.personal-s3
 конфигурацией S3 и фактической Railway-ревизией. Оба значения входят в
 digest общего Business/MTProto fence, поэтому квитанцию другой ревизии
 или другого допуска нельзя принять как результат этого запуска.
+До открытия тома точный permit записывается в ту же строку queued-операции.
+Ссылка на допуск уникальна внутри RU binding, а операция, SHA текста,
+staging-ревизия и дедлайн после записи неизменяемы. Claim воркера и повторная
+предdispatch-проверка сравнивают эту долговечную запись; расхождение либо
+частично записанный permit останавливают путь без Telegram RPC.
 
 Сверьте `result` в Work с одной квитанцией `telegram_<id>`. При
 `unknown` требуется сверка исхода, повторный запуск не переотправляет
