@@ -777,6 +777,19 @@ async def test_saved_messages_is_opt_in_for_verified_worker(runtime):
 
 
 @pytest.mark.anyio
+async def test_saved_messages_worker_does_not_connect_after_stop(runtime):
+    operation = await enqueue(runtime, "stopped-worker", peer=PeerIdentity("self", 42))
+    stop = asyncio.Event()
+    stop.set()
+    fence = RecordingSavedMessagesFence()
+    client = RecordingSavedMessagesClient(stop, fence)
+    dispatcher = saved_dispatch(runtime, operation, fence)
+    result = await worker(runtime, client, saved_messages=dispatcher).run_until(stop)
+    assert result.code == "saved_messages_approval_inactive"
+    assert client.connect_count == 0 and fence.reservations == []
+
+
+@pytest.mark.anyio
 async def test_telethon_saved_messages_has_no_address_parameter(monkeypatch):
     from telethon import functions, types
     from telethon.sessions import StringSession

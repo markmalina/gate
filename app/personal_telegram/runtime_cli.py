@@ -33,6 +33,7 @@ from app.personal_telegram.cloud_worker import (
     RuCloudWorker,
     TelegramApplication,
     TelethonRuntimeClient,
+    WorkerExit,
 )
 from app.personal_telegram.command_scope import CommandRuntimeError, RuCommandScope, utc_now
 from app.personal_telegram.command_store import (
@@ -320,21 +321,25 @@ async def run(
             client_factory=lambda session: TelethonRuntimeClient(session, app),
             enabled=config.enabled,
         )
-        stop = asyncio.Event()
-        loop = asyncio.get_running_loop()
-        timer = loop.call_later(seconds, stop.set)
-        installed = []
-        try:
-            for sig in (signal.SIGINT, signal.SIGTERM):
-                with suppress(NotImplementedError):
-                    loop.add_signal_handler(sig, stop.set)
-                    installed.append(sig)
-            outcome = await worker.run_until(stop)
-        finally:
-            timer.cancel()
-            for sig in installed:
-                loop.remove_signal_handler(sig)
+        outcome = await run_worker(worker, seconds)
         return {"account": "RU", "state": outcome.state, "error_code": outcome.code}
+
+
+async def run_worker(worker: RuCloudWorker, seconds: float) -> WorkerExit:
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    timer = loop.call_later(seconds, stop.set)
+    installed = []
+    try:
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            with suppress(NotImplementedError):
+                loop.add_signal_handler(sig, stop.set)
+                installed.append(sig)
+        return await worker.run_until(stop)
+    finally:
+        timer.cancel()
+        for sig in installed:
+            loop.remove_signal_handler(sig)
 
 
 def main() -> None:

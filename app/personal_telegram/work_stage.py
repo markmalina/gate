@@ -143,24 +143,32 @@ class StageSettings(BaseSettings):
 
 
 class StageJournal(PersonalCommandService):
-    def __init__(self, sessions: async_sessionmaker[AsyncSession], config: StageSettings) -> None:
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        config: StageSettings,
+        *,
+        peer: PeerIdentity = FIXTURE_PEER,
+    ) -> None:
         scope = config.scope()
         grants = SqlGrantRegistry(
             sessions, scope=scope, policy_key=config.key("grant"), key_version="s1-v1"
         )
+        self.payload_cipher = CommandPayloadCipher(config.key("payload"))
         store = SqlCommandStore(
             sessions,
             scope=scope,
-            payload_cipher=CommandPayloadCipher(config.key("payload")),
+            payload_cipher=self.payload_cipher,
             grants=grants,
         )
         super().__init__(store, grants, peer_reference_key=config.key("peer"))
+        self.peer = peer
         self.grant = CommandDelegation(
             config.grant_id,
             scope,
             oauth_client_namespace(config.issuer, config.client_id),
             frozenset({"send_text"}),
-            frozenset({FIXTURE_PEER.key}),
+            frozenset({peer.key}),
             config.grant_expires_at,
         )
         self.s2_status_url = config.s2_status_url
@@ -179,13 +187,11 @@ class StageJournal(PersonalCommandService):
         await self.check_binding()
         result["journal_ready"] = True
         if self.s2_status_url:
-            result["s2_status"] = await read_s2_status(
-                self.s2_status_url, self.s2_status_token
-            )
+            result["s2_status"] = await read_s2_status(self.s2_status_url, self.s2_status_token)
         if "gate:personal:send_text" in principal.scopes:
             try:
                 peer = await self.issue_peer_reference(
-                    principal=principal, delegation=self.grant, peer=FIXTURE_PEER, now=utc_now()
+                    principal=principal, delegation=self.grant, peer=self.peer, now=utc_now()
                 )
             except CommandRuntimeError as exc:
                 if str(exc) not in {"delegation_inactive", "delegation_not_found"}:

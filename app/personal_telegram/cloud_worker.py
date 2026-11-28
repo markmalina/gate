@@ -162,6 +162,10 @@ class RuCloudWorker:
                     ttl=self.ttl,
                     health="connecting",
                 )
+                if self.saved_messages is not None and (
+                    stop.is_set() or self.clock() >= self.saved_messages.approval.expires_at
+                ):
+                    raise CommandRuntimeError("saved_messages_approval_inactive")
                 client = self.client_factory(session)
                 await self._connect_verified(client)
                 await self.store.renew_owner(

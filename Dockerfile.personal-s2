@@ -4,7 +4,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
 
 COPY constraints/runtime.txt /tmp/runtime.txt
-RUN pip install -c /tmp/runtime.txt fastapi 'uvicorn[standard]' cryptography Pillow \
+RUN pip install -c /tmp/runtime.txt fastapi 'uvicorn[standard]' cryptography Pillow httpx \
     'Telethon==1.44.0' 'qrcode==8.2' sqlalchemy asyncpg alembic pydantic-settings
 
 COPY app ./app

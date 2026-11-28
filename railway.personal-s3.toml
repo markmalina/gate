@@ -1,0 +1,9 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = """/bin/sh -ec 'test "$GATE_ENV" = staging; test "${GATE_PERSONAL_S3_STAGE_ENABLED:-}" = true; exec uvicorn app.api.personal_stage:create_s3_app --factory --host 0.0.0.0 --port "${PORT:-8000}" --no-access-log'"""
+healthcheckPath = "/health"
+healthcheckTimeout = 60
+restartPolicyType = "NEVER"
